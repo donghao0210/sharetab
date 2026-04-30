@@ -90,6 +90,37 @@ export default function ExpenseDetailPage({
             </>
           )}
 
+          {e.subtotal != null && (e.serviceCharge || e.tax) ? (
+            <>
+              <Separator />
+              <div>
+                <p className="mb-2 text-sm font-medium text-muted-foreground">Breakdown</p>
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span>{formatCents(e.subtotal, e.currency, locale)}</span>
+                  </div>
+                  {e.serviceCharge ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Service / Tip</span>
+                      <span>{formatCents(e.serviceCharge, e.currency, locale)}</span>
+                    </div>
+                  ) : null}
+                  {e.tax ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Tax</span>
+                      <span>{formatCents(e.tax, e.currency, locale)}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between border-t border-border pt-1 font-medium">
+                    <span>Total</span>
+                    <span>{formatCents(e.amount, e.currency, locale)}</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
+
           <Separator />
 
           <div>
