@@ -90,7 +90,7 @@ export default function ExpenseDetailPage({
             </>
           )}
 
-          {e.subtotal != null && (e.serviceCharge || e.tax) ? (
+          {e.subtotal != null && (e.serviceCharge || e.tax || e.rounding) ? (
             <>
               <Separator />
               <div>
@@ -110,6 +110,15 @@ export default function ExpenseDetailPage({
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Tax</span>
                       <span>{formatCents(e.tax, e.currency, locale)}</span>
+                    </div>
+                  ) : null}
+                  {e.rounding ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Rounding</span>
+                      <span>
+                        {e.rounding > 0 ? "+" : ""}
+                        {formatCents(e.rounding, e.currency, locale)}
+                      </span>
                     </div>
                   ) : null}
                   <div className="flex items-center justify-between border-t border-border pt-1 font-medium">

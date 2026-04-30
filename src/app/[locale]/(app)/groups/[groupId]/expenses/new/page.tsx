@@ -54,6 +54,7 @@ export default function NewExpensePage({
   const [subtotalStr, setSubtotalStr] = useState("");
   const [servicePercentStr, setServicePercentStr] = useState("0");
   const [taxPercentStr, setTaxPercentStr] = useState("0");
+  const [receiptTotalStr, setReceiptTotalStr] = useState("");
   const [category, setCategory] = useState("");
   const [paidById, setPaidById] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
@@ -98,7 +99,10 @@ export default function NewExpensePage({
       }),
     [subtotalStr, servicePercentStr, taxPercentStr]
   );
-  const amountCents = breakdown.totalCents;
+  const receiptTotalCents = parseToCents(receiptTotalStr);
+  const useReceiptTotal = receiptTotalStr.trim() !== "" && receiptTotalCents > 0;
+  const roundingCents = useReceiptTotal ? receiptTotalCents - breakdown.totalCents : 0;
+  const amountCents = useReceiptTotal ? receiptTotalCents : breakdown.totalCents;
 
   function applyPreset(servicePercent: number, taxPercent: number) {
     setServicePercentStr(String(servicePercent));
@@ -118,6 +122,7 @@ export default function NewExpensePage({
             subtotal: breakdown.subtotalCents,
             serviceCharge: breakdown.serviceChargeCents,
             tax: breakdown.taxCents,
+            ...(roundingCents !== 0 ? { rounding: roundingCents } : {}),
           }
         : {}),
       category: category || undefined,
@@ -221,6 +226,24 @@ export default function NewExpensePage({
             </div>
 
             {hasBreakdown && breakdown.subtotalCents > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="receiptTotal">Receipt total (optional)</Label>
+                <Input
+                  id="receiptTotal"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder={`Computed: ${formatCents(breakdown.totalCents, groupCurrency, locale)}`}
+                  value={receiptTotalStr}
+                  onChange={(e) => setReceiptTotalStr(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Override with the exact total printed on the receipt — the difference becomes a rounding line.
+                </p>
+              </div>
+            )}
+
+            {hasBreakdown && breakdown.subtotalCents > 0 && (
               <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
@@ -238,9 +261,18 @@ export default function NewExpensePage({
                     <span>{formatCents(breakdown.taxCents, groupCurrency, locale)}</span>
                   </div>
                 )}
+                {roundingCents !== 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rounding</span>
+                    <span>
+                      {roundingCents > 0 ? "+" : ""}
+                      {formatCents(roundingCents, groupCurrency, locale)}
+                    </span>
+                  </div>
+                )}
                 <div className="mt-1 flex justify-between border-t border-border pt-1 font-medium">
                   <span>Total</span>
-                  <span>{formatCents(breakdown.totalCents, groupCurrency, locale)}</span>
+                  <span>{formatCents(amountCents, groupCurrency, locale)}</span>
                 </div>
               </div>
             )}
