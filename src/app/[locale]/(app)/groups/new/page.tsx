@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 
-const CURRENCY_OPTIONS = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "BRL"];
+const CURRENCY_OPTIONS = ["MYR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "BRL"];
 const EMOJI_OPTIONS = ["💰", "🏠", "✈️", "🍽️", "🎉", "🛒", "🚗", "💼"];
 
 export default function NewGroupPage() {
