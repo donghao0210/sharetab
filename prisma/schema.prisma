@@ -144,6 +144,7 @@ model Expense {
   subtotal    Int?      // pre-tax/service subtotal in cents (optional breakdown)
   serviceCharge Int?    // service/tip charge in cents
   tax         Int?      // tax in cents
+  rounding    Int?      // rounding adjustment in cents (signed; e.g. MY 5-sen rounding)
   currency    String    @default("USD")
   category    String?
   expenseDate DateTime  @default(now())
