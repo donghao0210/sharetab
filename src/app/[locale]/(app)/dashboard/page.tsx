@@ -118,6 +118,8 @@ export default function DashboardPage() {
     : groups.data?.slice(0, GROUPS_PER_PAGE);
   const hasMoreGroups = (groups.data?.length ?? 0) > GROUPS_PER_PAGE;
 
+  const displayCurrency = groups.data?.[0]?.currency ?? "USD";
+
   return (
     <div className="space-y-8">
       {/* ---- Header ---- */}
@@ -145,7 +147,7 @@ export default function DashboardPage() {
           <CardContent>
             {dashboard.data ? (
               <span className="text-3xl font-bold tracking-tight tabular-nums text-green-600 dark:text-green-400">
-                {formatCents(dashboard.data.totalOwed, "USD", locale)}
+                {formatCents(dashboard.data.totalOwed, displayCurrency, locale)}
               </span>
             ) : (
               <SummarySkeleton />
@@ -167,7 +169,7 @@ export default function DashboardPage() {
           <CardContent>
             {dashboard.data ? (
               <span className="text-3xl font-bold tracking-tight tabular-nums text-red-600 dark:text-red-400">
-                {formatCents(dashboard.data.totalOwing, "USD", locale)}
+                {formatCents(dashboard.data.totalOwing, displayCurrency, locale)}
               </span>
             ) : (
               <SummarySkeleton />
@@ -214,7 +216,7 @@ export default function DashboardPage() {
                     <span className="text-sm font-medium">{person.userName}</span>
                   </div>
                   <span className="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">
-                    {formatCents(person.amount, "USD", locale)}
+                    {formatCents(person.amount, displayCurrency, locale)}
                   </span>
                 </div>
               ))}
@@ -258,7 +260,7 @@ export default function DashboardPage() {
                     <span className="text-sm font-medium">{person.userName}</span>
                   </div>
                   <span className="text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">
-                    {formatCents(person.amount, "USD", locale)}
+                    {formatCents(person.amount, displayCurrency, locale)}
                   </span>
                 </div>
               ))}
@@ -365,7 +367,7 @@ export default function DashboardPage() {
                           }`}
                         >
                           {balance.balance > 0 ? "+" : ""}
-                          {formatCents(balance.balance, "USD", locale)}
+                          {formatCents(balance.balance, group.currency, locale)}
                         </span>
                       )}
                       {balance && balance.balance === 0 && (

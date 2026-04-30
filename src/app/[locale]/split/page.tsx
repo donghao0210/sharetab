@@ -495,7 +495,7 @@ export default function GuestSplitPage() {
                       Describe what needs to be corrected and AI will re-scan the receipt.
                     </p>
                     <textarea
-                      placeholder='e.g., "The total should be $45.99" or "There are 3 tacos, not 1"'
+                      placeholder='e.g., "The total should be 45.99" or "There are 3 tacos, not 1"'
                       value={correctionHint}
                       onChange={(e) => setCorrectionHint(e.target.value)}
                       rows={3}
