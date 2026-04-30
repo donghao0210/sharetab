@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
+import { useSession } from "next-auth/react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { trpc } from "@/lib/trpc";
 import { parseToCents } from "@/lib/money";
@@ -44,6 +45,7 @@ export default function NewExpensePage({
   const { groupId } = use(params);
   const router = useRouter();
   const locale = useLocale();
+  const { data: session } = useSession();
   const group = trpc.groups.get.useQuery({ groupId });
 
   const [title, setTitle] = useState("");
@@ -67,6 +69,14 @@ export default function NewExpensePage({
       })) ?? [],
     [group.data?.members]
   );
+
+  useEffect(() => {
+    if (paidById) return;
+    const currentUserId = session?.user?.id;
+    if (currentUserId && members.some((m) => m.id === currentUserId)) {
+      setPaidById(currentUserId);
+    }
+  }, [paidById, session?.user?.id, members]);
 
   const amountCents = parseToCents(amountStr);
 
