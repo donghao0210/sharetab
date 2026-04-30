@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { trpc } from "@/lib/trpc";
 import { formatCents } from "@/lib/money";
@@ -73,8 +73,25 @@ export default function GroupDetailPage({
 
   const group = trpc.groups.get.useQuery({ groupId });
   const expenses = trpc.expenses.list.useQuery({ groupId, limit: 10 });
+  const settlements = trpc.settlements.list.useQuery({ groupId });
   const debts = trpc.balances.getSimplifiedDebts.useQuery({ groupId });
   const pendingReceipts = trpc.receipts.listPending.useQuery({ groupId });
+
+  type FeedItem =
+    | { kind: "expense"; date: Date; expense: NonNullable<typeof expenses.data>["expenses"][number] }
+    | { kind: "settlement"; date: Date; settlement: NonNullable<typeof settlements.data>[number] };
+
+  const feedItems: FeedItem[] = useMemo(() => {
+    const items: FeedItem[] = [];
+    for (const expense of expenses.data?.expenses ?? []) {
+      items.push({ kind: "expense", date: new Date(expense.expenseDate), expense });
+    }
+    for (const settlement of settlements.data ?? []) {
+      items.push({ kind: "settlement", date: new Date(settlement.settledAt), settlement });
+    }
+    items.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return items.slice(0, 10);
+  }, [expenses.data, settlements.data]);
   const deletePending = trpc.receipts.deletePending.useMutation({
     onSuccess: () => pendingReceipts.refetch(),
   });
@@ -292,10 +309,10 @@ export default function GroupDetailPage({
         </div>
       )}
 
-      {/* Expenses */}
+      {/* Activity */}
       <div>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Expenses</h2>
+          <h2 className="text-lg font-semibold">Activity</h2>
           {!g.archivedAt && (
             <div className="flex flex-wrap gap-2">
               <Button
@@ -315,13 +332,15 @@ export default function GroupDetailPage({
           )}
         </div>
 
-        {expenses.isLoading && <p className="text-muted-foreground">Loading...</p>}
+        {(expenses.isLoading || settlements.isLoading) && (
+          <p className="text-muted-foreground">Loading...</p>
+        )}
 
-        {expenses.data?.expenses.length === 0 && (
+        {!expenses.isLoading && !settlements.isLoading && feedItems.length === 0 && (
           <Card>
             <CardContent className="py-8 text-center">
               <Receipt className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-muted-foreground">No expenses yet.</p>
+              <p className="text-muted-foreground">No activity yet.</p>
               <Button
                 className="mt-4"
                 size="sm"
@@ -335,43 +354,81 @@ export default function GroupDetailPage({
           </Card>
         )}
 
-        {expenses.data && expenses.data.expenses.length > 0 && (
+        {feedItems.length > 0 && (
         <Card className="divide-y divide-border overflow-hidden">
-          {expenses.data.expenses.map((expense, index) => (
-            <Link
-              key={expense.id}
-              href={`/groups/${groupId}/expenses/${expense.id}`}
-              className="block"
-            >
+          {feedItems.map((item, index) => {
+            const stripe = index % 2 === 1 ? "bg-muted/20" : "";
+            if (item.kind === "expense") {
+              const expense = item.expense;
+              return (
+                <Link
+                  key={`exp-${expense.id}`}
+                  href={`/groups/${groupId}/expenses/${expense.id}`}
+                  className="block"
+                >
+                  <div
+                    className={`flex items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50 ${stripe}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent">
+                        <Tag className="h-3.5 w-3.5 text-accent-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{expense.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Paid by {expense.paidBy.name ?? expense.paidBy.email ?? "Unknown"}
+                          {" · "}
+                          {item.date.toLocaleDateString()}
+                          {expense.category && (
+                            <span className="ml-1 text-muted-foreground/70">
+                              {" · "}{expense.category}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="ml-4 shrink-0 text-lg font-semibold tabular-nums">
+                      {formatCents(expense.amount, g.currency, locale)}
+                    </p>
+                  </div>
+                </Link>
+              );
+            }
+
+            const s = item.settlement;
+            const fromName = s.from.name ?? "Someone";
+            const toName = s.to.name ?? "someone";
+            return (
               <div
-                className={`flex items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50 ${
-                  index % 2 === 1 ? "bg-muted/20" : ""
-                }`}
+                key={`stl-${s.id}`}
+                className={`flex items-center justify-between px-4 py-3 ${stripe}`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent">
-                    <Tag className="h-3.5 w-3.5 text-accent-foreground" />
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+                    <Handshake className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
                   </div>
                   <div className="min-w-0">
-                    <p className="font-medium truncate">{expense.title}</p>
+                    <p className="font-medium truncate">
+                      {fromName} paid {toName}
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      Paid by {expense.paidBy.name ?? expense.paidBy.email ?? "Unknown"}
+                      Settlement
                       {" · "}
-                      {new Date(expense.expenseDate).toLocaleDateString()}
-                      {expense.category && (
+                      {item.date.toLocaleDateString()}
+                      {s.note && (
                         <span className="ml-1 text-muted-foreground/70">
-                          {" · "}{expense.category}
+                          {" · "}{s.note}
                         </span>
                       )}
                     </p>
                   </div>
                 </div>
-                <p className="ml-4 shrink-0 text-lg font-semibold tabular-nums">
-                  {formatCents(expense.amount, g.currency, locale)}
+                <p className="ml-4 shrink-0 text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                  {formatCents(s.amount, s.currency, locale)}
                 </p>
               </div>
-            </Link>
-          ))}
+            );
+          })}
         </Card>
         )}
       </div>
