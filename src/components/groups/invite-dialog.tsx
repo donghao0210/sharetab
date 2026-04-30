@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Check, Copy, Link } from "lucide-react";
 
 export function InviteDialog({
@@ -23,11 +24,29 @@ export function InviteDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [placeholderUserId, setPlaceholderUserId] = useState<string>("");
+
+  const group = trpc.groups.get.useQuery({ groupId }, { enabled: open });
+  const placeholders =
+    group.data?.members
+      .filter((m) => m.user.isPlaceholder)
+      .map((m) => ({ id: m.user.id, name: m.user.placeholderName ?? m.user.name ?? "Unnamed" })) ?? [];
 
   const createInvite = trpc.groups.createInvite.useMutation();
 
+  // Reset selection whenever the dialog opens or closes so a fresh invite starts clean
+  useEffect(() => {
+    if (!open) {
+      setPlaceholderUserId("");
+      createInvite.reset();
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleGenerate() {
-    createInvite.mutate({ groupId });
+    createInvite.mutate({
+      groupId,
+      ...(placeholderUserId ? { placeholderUserId } : {}),
+    });
   }
 
   function getInviteUrl(token: string) {
@@ -54,10 +73,33 @@ export function InviteDialog({
         </DialogHeader>
 
         {!createInvite.data ? (
-          <Button onClick={handleGenerate} disabled={createInvite.isPending}>
-            <Link className="mr-2 h-4 w-4" />
-            {createInvite.isPending ? "Generating..." : "Generate invite link"}
-          </Button>
+          <div className="space-y-3">
+            {placeholders.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="invite-placeholder">Invite as</Label>
+                <select
+                  id="invite-placeholder"
+                  value={placeholderUserId}
+                  onChange={(e) => setPlaceholderUserId(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">New member (generic invite)</option>
+                  {placeholders.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      Replace placeholder: {p.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Linking to a placeholder auto-merges their existing expense shares into the joining user.
+                </p>
+              </div>
+            )}
+            <Button onClick={handleGenerate} disabled={createInvite.isPending}>
+              <Link className="mr-2 h-4 w-4" />
+              {createInvite.isPending ? "Generating..." : "Generate invite link"}
+            </Button>
+          </div>
         ) : (
           <div className="space-y-3">
             <div className="flex gap-2">
@@ -75,7 +117,9 @@ export function InviteDialog({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Anyone with this link can join the group.
+              {placeholderUserId
+                ? "When this link is used, the joining user will inherit all existing shares from the linked placeholder."
+                : "Anyone with this link can join the group."}
             </p>
           </div>
         )}
