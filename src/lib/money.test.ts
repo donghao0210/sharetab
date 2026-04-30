@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { formatCents, parseToCents, centsToDecimal } from "./money";
+import { formatCents, parseToCents, centsToDecimal, normalizeCurrencyCode } from "./money";
 
 describe("formatCents", () => {
   test("formats whole dollar amounts", () => {
@@ -46,6 +46,14 @@ describe("formatCents", () => {
   test("maps app locale codes to regional money locales", () => {
     const result = formatCents(123456, "EUR", "es");
     expect(result).toContain("1234,56");
+  });
+
+  test("does not crash when given a non-ISO currency string", () => {
+    // Receipts often write "RM" or other symbols — must not crash the caller
+    expect(() => formatCents(1000, "RM")).not.toThrow();
+    expect(formatCents(1000, "RM")).toContain("10.00"); // resolves via symbol map -> MYR
+    expect(() => formatCents(1000, "not-a-currency")).not.toThrow();
+    expect(formatCents(1000, "not-a-currency")).toBe("$10.00"); // unknown -> USD fallback
   });
 
   test("maps all supported app locales to regional money locales", () => {
@@ -110,6 +118,43 @@ describe("parseToCents", () => {
 
   test("handles negative values", () => {
     expect(parseToCents("-10.50")).toBe(-1050);
+  });
+});
+
+describe("normalizeCurrencyCode", () => {
+  test("returns ISO codes unchanged", () => {
+    expect(normalizeCurrencyCode("USD")).toBe("USD");
+    expect(normalizeCurrencyCode("MYR")).toBe("MYR");
+    expect(normalizeCurrencyCode("EUR")).toBe("EUR");
+  });
+
+  test("uppercases lowercase ISO codes", () => {
+    expect(normalizeCurrencyCode("usd")).toBe("USD");
+    expect(normalizeCurrencyCode("myr")).toBe("MYR");
+  });
+
+  test("maps Malaysian RM to MYR", () => {
+    expect(normalizeCurrencyCode("RM")).toBe("MYR");
+    expect(normalizeCurrencyCode("rm")).toBe("MYR");
+  });
+
+  test("maps common currency symbols to ISO codes", () => {
+    expect(normalizeCurrencyCode("$")).toBe("USD");
+    expect(normalizeCurrencyCode("€")).toBe("EUR");
+    expect(normalizeCurrencyCode("£")).toBe("GBP");
+    expect(normalizeCurrencyCode("¥")).toBe("JPY");
+    expect(normalizeCurrencyCode("S$")).toBe("SGD");
+    expect(normalizeCurrencyCode("HK$")).toBe("HKD");
+  });
+
+  test("trims whitespace", () => {
+    expect(normalizeCurrencyCode("  RM  ")).toBe("MYR");
+    expect(normalizeCurrencyCode(" USD ")).toBe("USD");
+  });
+
+  test("falls back to USD for empty or unknown values", () => {
+    expect(normalizeCurrencyCode("")).toBe("USD");
+    expect(normalizeCurrencyCode("???")).toBe("USD");
   });
 });
 

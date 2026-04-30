@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeCurrencyCode } from "@/lib/money";
 
 export const receiptItemSchema = z.object({
   name: z.string(),
@@ -15,7 +16,10 @@ export const receiptExtractionSchema = z.object({
   tax: z.number().int().min(0).default(0),
   tip: z.number().int().min(0).default(0),
   total: z.number().int().min(0),
-  currency: z.string().default("USD"),
+  currency: z
+    .string()
+    .default("USD")
+    .transform((value) => normalizeCurrencyCode(value)),
   confidence: z.number().min(0).max(1).optional(),
 });
 
