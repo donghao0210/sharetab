@@ -1,10 +1,12 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useMemo } from "react";
 import { useLocale } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { trpc } from "@/lib/trpc";
-import { parseToCents, centsToDecimal } from "@/lib/money";
+import { formatCents, parseToCents, centsToDecimal } from "@/lib/money";
+import { computeTax } from "@/lib/tax-calculator";
+import { getTaxPresets } from "@/lib/tax-presets";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,7 +50,10 @@ export default function EditExpensePage({
   const expense = trpc.expenses.get.useQuery({ groupId, expenseId });
 
   const [title, setTitle] = useState("");
-  const [amountStr, setAmountStr] = useState("");
+  const [subtotalStr, setSubtotalStr] = useState("");
+  const [servicePercentStr, setServicePercentStr] = useState("0");
+  const [taxPercentStr, setTaxPercentStr] = useState("0");
+  const [receiptTotalStr, setReceiptTotalStr] = useState("");
   const [category, setCategory] = useState("");
   const [paidById, setPaidById] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
@@ -60,7 +65,27 @@ export default function EditExpensePage({
     if (expense.data && !loaded) {
       const e = expense.data;
       setTitle(e.title);
-      setAmountStr(centsToDecimal(e.amount));
+
+      const subtotalCents = e.subtotal ?? e.amount;
+      const serviceChargeCents = e.serviceCharge ?? 0;
+      const taxCents = e.tax ?? 0;
+      const roundingCents = e.rounding ?? 0;
+      setSubtotalStr(centsToDecimal(subtotalCents));
+      setServicePercentStr(
+        subtotalCents > 0 && serviceChargeCents > 0
+          ? ((serviceChargeCents / subtotalCents) * 100).toFixed(2).replace(/\.?0+$/, "")
+          : "0"
+      );
+      const taxBase = subtotalCents + serviceChargeCents;
+      setTaxPercentStr(
+        taxBase > 0 && taxCents > 0
+          ? ((taxCents / taxBase) * 100).toFixed(2).replace(/\.?0+$/, "")
+          : "0"
+      );
+      if (roundingCents !== 0) {
+        setReceiptTotalStr(centsToDecimal(e.amount));
+      }
+
       setCategory(e.category ?? "");
       setPaidById(e.paidById);
       if (e.splitMode !== "ITEM") {
@@ -82,7 +107,31 @@ export default function EditExpensePage({
       name: m.user.placeholderName ?? m.user.name ?? m.user.email,
     })) ?? [];
 
-  const amountCents = parseToCents(amountStr);
+  const groupCurrency = group.data?.currency ?? expense.data?.currency ?? "USD";
+  const presets = useMemo(() => getTaxPresets(groupCurrency), [groupCurrency]);
+  const hasBreakdown = useMemo(
+    () => parseFloat(servicePercentStr || "0") > 0 || parseFloat(taxPercentStr || "0") > 0,
+    [servicePercentStr, taxPercentStr]
+  );
+
+  const breakdown = useMemo(
+    () =>
+      computeTax({
+        subtotalCents: parseToCents(subtotalStr),
+        servicePercent: parseFloat(servicePercentStr || "0") || 0,
+        taxPercent: parseFloat(taxPercentStr || "0") || 0,
+      }),
+    [subtotalStr, servicePercentStr, taxPercentStr]
+  );
+  const receiptTotalCents = parseToCents(receiptTotalStr);
+  const useReceiptTotal = receiptTotalStr.trim() !== "" && receiptTotalCents > 0;
+  const roundingCents = useReceiptTotal ? receiptTotalCents - breakdown.totalCents : 0;
+  const amountCents = useReceiptTotal ? receiptTotalCents : breakdown.totalCents;
+
+  function applyPreset(servicePercent: number, taxPercent: number) {
+    setServicePercentStr(String(servicePercent));
+    setTaxPercentStr(String(taxPercent));
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,6 +142,10 @@ export default function EditExpensePage({
       expenseId,
       title,
       amount: amountCents,
+      subtotal: hasBreakdown ? breakdown.subtotalCents : null,
+      serviceCharge: hasBreakdown ? breakdown.serviceChargeCents : null,
+      tax: hasBreakdown ? breakdown.taxCents : null,
+      rounding: hasBreakdown && roundingCents !== 0 ? roundingCents : null,
       category: category || undefined,
       paidById,
       splitMode,
@@ -156,18 +209,121 @@ export default function EditExpensePage({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="amount">Amount</Label>
+              <Label htmlFor="subtotal">Subtotal</Label>
               <Input
-                id="amount"
+                id="subtotal"
                 type="number"
                 step="0.01"
                 min="0.01"
                 placeholder="0.00"
-                value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
+                value={subtotalStr}
+                onChange={(e) => setSubtotalStr(e.target.value)}
                 required
               />
+              <p className="text-xs text-muted-foreground">Pre-tax/service amount</p>
             </div>
+
+            <div className="space-y-2">
+              <Label>Quick presets</Label>
+              <div className="flex flex-wrap gap-2">
+                {presets.map((p) => {
+                  const active =
+                    parseFloat(servicePercentStr || "0") === p.servicePercent &&
+                    parseFloat(taxPercentStr || "0") === p.taxPercent;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => applyPreset(p.servicePercent, p.taxPercent)}
+                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                        active
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:bg-muted"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="servicePercent">Service / Tip %</Label>
+                <Input
+                  id="servicePercent"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={servicePercentStr}
+                  onChange={(e) => setServicePercentStr(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="taxPercent">Tax %</Label>
+                <Input
+                  id="taxPercent"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={taxPercentStr}
+                  onChange={(e) => setTaxPercentStr(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {hasBreakdown && breakdown.subtotalCents > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="receiptTotal">Receipt total (optional)</Label>
+                <Input
+                  id="receiptTotal"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder={`Computed: ${formatCents(breakdown.totalCents, groupCurrency, locale)}`}
+                  value={receiptTotalStr}
+                  onChange={(e) => setReceiptTotalStr(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Override with the exact total printed on the receipt — the difference becomes a rounding line.
+                </p>
+              </div>
+            )}
+
+            {hasBreakdown && breakdown.subtotalCents > 0 && (
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span>{formatCents(breakdown.subtotalCents, groupCurrency, locale)}</span>
+                </div>
+                {breakdown.serviceChargeCents > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Service / Tip</span>
+                    <span>{formatCents(breakdown.serviceChargeCents, groupCurrency, locale)}</span>
+                  </div>
+                )}
+                {breakdown.taxCents > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Tax</span>
+                    <span>{formatCents(breakdown.taxCents, groupCurrency, locale)}</span>
+                  </div>
+                )}
+                {roundingCents !== 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rounding</span>
+                    <span>
+                      {roundingCents > 0 ? "+" : ""}
+                      {formatCents(roundingCents, groupCurrency, locale)}
+                    </span>
+                  </div>
+                )}
+                <div className="mt-1 flex justify-between border-t border-border pt-1 font-medium">
+                  <span>Total</span>
+                  <span>{formatCents(amountCents, groupCurrency, locale)}</span>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="category">Category (optional)</Label>

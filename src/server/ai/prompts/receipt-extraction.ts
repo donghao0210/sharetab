@@ -20,6 +20,7 @@ CRITICAL RULES:
 - quantity * unitPrice should equal totalPrice for each item
 - subtotal should equal the sum of all item totalPrices
 - total should equal subtotal + tax + tip
+- "currency" MUST be a three-letter ISO 4217 code in uppercase (e.g. "USD", "MYR", "EUR", "SGD"). Map symbols you see on the receipt to ISO codes: "RM" -> "MYR", "S$" -> "SGD", "$" -> "USD", "€" -> "EUR", "£" -> "GBP", "¥" -> "JPY". Never return a symbol or non-ISO string.
 - If you cannot read a value clearly, make your best estimate
 - Do not include any text outside the JSON object
 - Return ONLY valid JSON, no markdown code fences`;
