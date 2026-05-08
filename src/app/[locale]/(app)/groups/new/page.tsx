@@ -9,11 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getCurrencyOptions, type CurrencyOption } from "@/lib/money";
 import { trpc } from "@/lib/trpc";
 
 const EMOJI_OPTIONS = ["💰", "🏠", "✈️", "🍽️", "🎉", "🛒", "🚗", "💼"];
-
-type CurrencyOption = { value: string; label: string };
 
 export default function NewGroupPage() {
   const router = useRouter();
@@ -23,13 +22,7 @@ export default function NewGroupPage() {
   const [currency, setCurrency] = useState("USD");
   const [emoji, setEmoji] = useState("💰");
 
-  const currencyOptions = useMemo<CurrencyOption[]>(() => {
-    const codes = Intl.supportedValuesOf("currency");
-    const displayNames = new Intl.DisplayNames([locale], { type: "currency" });
-    return codes
-      .map((code) => ({ value: code, label: `${code} — ${displayNames.of(code) ?? code}` }))
-      .sort((a, b) => a.value.localeCompare(b.value));
-  }, [locale]);
+  const currencyOptions = useMemo(() => getCurrencyOptions(locale), [locale]);
 
   const selectedCurrency = useMemo(
     () => currencyOptions.find((c) => c.value === currency) ?? null,

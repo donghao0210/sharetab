@@ -66,3 +66,13 @@ export function parseToCents(value: string): number {
 export function centsToDecimal(cents: number): string {
   return (cents / 100).toFixed(2);
 }
+
+export type CurrencyOption = { value: string; label: string };
+
+export function getCurrencyOptions(locale: string = defaultLocale): CurrencyOption[] {
+  const safeLocale = moneyLocales[locale] ?? locale;
+  const displayNames = new Intl.DisplayNames([safeLocale], { type: "currency" });
+  return Intl.supportedValuesOf("currency")
+    .map((code) => ({ value: code, label: `${code} — ${displayNames.of(code) ?? code}` }))
+    .sort((a, b) => a.value.localeCompare(b.value));
+}
