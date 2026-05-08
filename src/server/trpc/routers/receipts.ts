@@ -226,6 +226,87 @@ export const receiptsRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  splitItem: protectedProcedure
+    .input(
+      z.object({
+        itemId: z.string(),
+        splitQuantity: z.number().int().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const item = await ctx.db.receiptItem.findUnique({
+        where: { id: input.itemId },
+      });
+      if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+      await verifyReceiptAccess(ctx.db, item.receiptId, ctx.user.id);
+
+      if (input.splitQuantity >= item.quantity) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Split quantity must be less than total quantity",
+        });
+      }
+
+      return ctx.db.$transaction(async (tx) => {
+        const current = await tx.receiptItem.findUniqueOrThrow({
+          where: { id: input.itemId },
+        });
+
+        if (input.splitQuantity >= current.quantity) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Split quantity must be less than total quantity",
+          });
+        }
+
+        const maxNewTotal = current.totalPrice - 1;
+        if (maxNewTotal <= 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Item price too low to split",
+          });
+        }
+
+        const newTotalPrice = Math.min(current.unitPrice * input.splitQuantity, maxNewTotal);
+        const remainingQuantity = current.quantity - input.splitQuantity;
+        const remainingTotalPrice = current.totalPrice - newTotalPrice;
+
+        if (newTotalPrice <= 0 || remainingTotalPrice <= 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Split would result in invalid price distribution",
+          });
+        }
+
+        await tx.receiptItem.updateMany({
+          where: {
+            receiptId: current.receiptId,
+            sortOrder: { gt: current.sortOrder },
+          },
+          data: { sortOrder: { increment: 1 } },
+        });
+
+        await tx.receiptItem.update({
+          where: { id: input.itemId },
+          data: {
+            quantity: remainingQuantity,
+            totalPrice: remainingTotalPrice,
+          },
+        });
+
+        return tx.receiptItem.create({
+          data: {
+            receiptId: current.receiptId,
+            name: current.name,
+            quantity: input.splitQuantity,
+            unitPrice: current.unitPrice,
+            totalPrice: newTotalPrice,
+            sortOrder: current.sortOrder + 1,
+          },
+        });
+      });
+    }),
+
   updateExtractedData: protectedProcedure
     .input(
       z.object({
