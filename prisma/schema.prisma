@@ -152,6 +152,7 @@ model Expense {
   subtotal    Int?      // pre-tax/service subtotal in cents (optional breakdown)
   serviceCharge Int?    // service/tip charge in cents
   tax         Int?      // tax in cents
+  discount    Int?      // absolute discount in cents (positive number; e.g. lunch / student / promo)
   rounding    Int?      // rounding adjustment in cents (signed; e.g. MY 5-sen rounding)
   currency    String    @default("USD")
   category    String?

@@ -52,6 +52,7 @@ export default function EditExpensePage({
 
   const [title, setTitle] = useState("");
   const [subtotalStr, setSubtotalStr] = useState("");
+  const [discountStr, setDiscountStr] = useState("");
   const [servicePercentStr, setServicePercentStr] = useState("0");
   const [taxPercentStr, setTaxPercentStr] = useState("0");
   const [receiptTotalStr, setReceiptTotalStr] = useState("");
@@ -68,16 +69,19 @@ export default function EditExpensePage({
       setTitle(e.title);
 
       const subtotalCents = e.subtotal ?? e.amount;
+      const discountCents = e.discount ?? 0;
       const serviceChargeCents = e.serviceCharge ?? 0;
       const taxCents = e.tax ?? 0;
       const roundingCents = e.rounding ?? 0;
       setSubtotalStr(centsToDecimal(subtotalCents));
+      if (discountCents > 0) setDiscountStr(centsToDecimal(discountCents));
+      const discountedSubtotal = Math.max(0, subtotalCents - discountCents);
       setServicePercentStr(
-        subtotalCents > 0 && serviceChargeCents > 0
-          ? ((serviceChargeCents / subtotalCents) * 100).toFixed(2).replace(/\.?0+$/, "")
+        discountedSubtotal > 0 && serviceChargeCents > 0
+          ? ((serviceChargeCents / discountedSubtotal) * 100).toFixed(2).replace(/\.?0+$/, "")
           : "0"
       );
-      const taxBase = subtotalCents + serviceChargeCents;
+      const taxBase = discountedSubtotal + serviceChargeCents;
       setTaxPercentStr(
         taxBase > 0 && taxCents > 0
           ? ((taxCents / taxBase) * 100).toFixed(2).replace(/\.?0+$/, "")
@@ -111,18 +115,22 @@ export default function EditExpensePage({
   const groupCurrency = group.data?.currency ?? expense.data?.currency ?? "USD";
   const presets = useMemo(() => getTaxPresets(groupCurrency), [groupCurrency]);
   const hasBreakdown = useMemo(
-    () => parseFloat(servicePercentStr || "0") > 0 || parseFloat(taxPercentStr || "0") > 0,
-    [servicePercentStr, taxPercentStr]
+    () =>
+      parseFloat(servicePercentStr || "0") > 0 ||
+      parseFloat(taxPercentStr || "0") > 0 ||
+      parseToCents(discountStr) > 0,
+    [servicePercentStr, taxPercentStr, discountStr]
   );
 
   const breakdown = useMemo(
     () =>
       computeTax({
         subtotalCents: parseToCents(subtotalStr),
+        discountCents: parseToCents(discountStr),
         servicePercent: parseFloat(servicePercentStr || "0") || 0,
         taxPercent: parseFloat(taxPercentStr || "0") || 0,
       }),
-    [subtotalStr, servicePercentStr, taxPercentStr]
+    [subtotalStr, discountStr, servicePercentStr, taxPercentStr]
   );
   const receiptTotalCents = parseToCents(receiptTotalStr);
   const useReceiptTotal = receiptTotalStr.trim() !== "" && receiptTotalCents > 0;
@@ -146,6 +154,7 @@ export default function EditExpensePage({
       subtotal: hasBreakdown ? breakdown.subtotalCents : null,
       serviceCharge: hasBreakdown ? breakdown.serviceChargeCents : null,
       tax: hasBreakdown ? breakdown.taxCents : null,
+      discount: hasBreakdown && breakdown.discountCents > 0 ? breakdown.discountCents : null,
       rounding: hasBreakdown && roundingCents !== 0 ? roundingCents : null,
       category: category || undefined,
       paidById,
@@ -225,6 +234,22 @@ export default function EditExpensePage({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="discount">Discount (optional)</Label>
+              <Input
+                id="discount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={discountStr}
+                onChange={(e) => setDiscountStr(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Subtracted from the subtotal before service and tax (e.g. lunch / student / promo discount)
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label>Quick presets</Label>
               <div className="flex flex-wrap gap-2">
                 {presets.map((p) => {
@@ -298,6 +323,12 @@ export default function EditExpensePage({
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatCents(breakdown.subtotalCents, groupCurrency, locale)}</span>
                 </div>
+                {breakdown.discountCents > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Discount</span>
+                    <span>−{formatCents(breakdown.discountCents, groupCurrency, locale)}</span>
+                  </div>
+                )}
                 {breakdown.serviceChargeCents > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Service / Tip</span>
