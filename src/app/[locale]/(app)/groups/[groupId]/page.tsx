@@ -55,14 +55,14 @@ export default function GroupDetailPage({
 
   type FeedItem =
     | { kind: "expense"; date: Date; expense: NonNullable<typeof expenses.data>["expenses"][number] }
-    | { kind: "settlement"; date: Date; settlement: NonNullable<typeof settlements.data>[number] };
+    | { kind: "settlement"; date: Date; settlement: NonNullable<typeof settlements.data>["items"][number] };
 
   const feedItems: FeedItem[] = useMemo(() => {
     const items: FeedItem[] = [];
     for (const expense of expenses.data?.expenses ?? []) {
       items.push({ kind: "expense", date: new Date(expense.expenseDate), expense });
     }
-    for (const settlement of settlements.data ?? []) {
+    for (const settlement of settlements.data?.items ?? []) {
       items.push({ kind: "settlement", date: new Date(settlement.settledAt), settlement });
     }
     items.sort((a, b) => b.date.getTime() - a.date.getTime());
