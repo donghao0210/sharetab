@@ -7,6 +7,11 @@ export const extractedDataSchema = z.object({
   subtotal: z.number().int().min(0).default(0),
   tax: z.number().int().min(0).default(0),
   tip: z.number().int().min(0).default(0),
+  serviceCharge: z.number().int().min(0).default(0),
+  discount: z.number().int().min(0).default(0),
+  taxPct: z.number().min(0).max(100).nullable().optional(),
+  servicePct: z.number().min(0).max(100).nullable().optional(),
+  pricesIncludeTax: z.boolean().default(false),
   total: z.number().int().min(0).default(0),
   currency: z.string().default("USD"),
 }).passthrough();
