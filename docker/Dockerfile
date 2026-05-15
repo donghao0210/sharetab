@@ -24,6 +24,8 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npx prisma generate
 RUN npm run build
+ARG COMMIT_SHA=unknown
+RUN echo "$COMMIT_SHA" > .commit-sha
 
 # --- Runner ---
 FROM base AS runner
@@ -42,6 +44,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/.commit-sha ./.commit-sha
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./
 COPY --from=builder /app/src/generated ./src/generated

@@ -9,10 +9,15 @@ export const balancesRouter = createTRPCRouter({
       const [expenses, settlements] = await Promise.all([
         ctx.db.expense.findMany({
           where: { groupId: input.groupId },
-          include: { shares: true },
+          select: {
+            paidById: true,
+            amount: true,
+            shares: { select: { userId: true, amount: true } },
+          },
         }),
         ctx.db.settlement.findMany({
           where: { groupId: input.groupId },
+          select: { fromId: true, toId: true, amount: true },
         }),
       ]);
 
@@ -26,10 +31,15 @@ export const balancesRouter = createTRPCRouter({
       const [expenses, settlements] = await Promise.all([
         ctx.db.expense.findMany({
           where: { groupId: input.groupId },
-          include: { shares: true },
+          select: {
+            paidById: true,
+            amount: true,
+            shares: { select: { userId: true, amount: true } },
+          },
         }),
         ctx.db.settlement.findMany({
           where: { groupId: input.groupId },
+          select: { fromId: true, toId: true, amount: true },
         }),
       ]);
 
@@ -41,27 +51,38 @@ export const balancesRouter = createTRPCRouter({
   getOverallDebts: protectedProcedure.query(async ({ ctx }) => {
     const groups = await ctx.db.group.findMany({
       where: { members: { some: { userId: ctx.user.id } }, archivedAt: null },
-      include: {
-        expenses: { include: { shares: true } },
-        settlements: true,
+      select: {
+        expenses: {
+          select: {
+            paidById: true,
+            amount: true,
+            shares: { select: { userId: true, amount: true } },
+          },
+        },
+        settlements: {
+          select: { fromId: true, toId: true, amount: true },
+        },
         members: {
-          include: { user: { select: { id: true, name: true } } },
+          select: { user: { select: { id: true, name: true, venmoUsername: true } } },
         },
       },
     });
 
     // Aggregate net amounts across all groups per person pair
     // Positive = they owe you, Negative = you owe them
-    const aggregated = new Map<string, { userName: string; amount: number }>();
+    const aggregated = new Map<string, { userName: string; venmoUsername: string | null; amount: number }>();
 
     for (const group of groups) {
       const balances = computeBalances(group.expenses, group.settlements);
       const debts = simplifyDebts(balances);
 
-      // Build a userId -> userName lookup for this group
-      const nameMap = new Map<string, string>();
+      // Build a userId -> user info lookup for this group
+      const userMap = new Map<string, { name: string; venmoUsername: string | null }>();
       for (const member of group.members) {
-        nameMap.set(member.user.id, member.user.name ?? "Unknown");
+        userMap.set(member.user.id, {
+          name: member.user.name ?? "Unknown",
+          venmoUsername: member.user.venmoUsername,
+        });
       }
 
       // Aggregate debts relative to the current user
@@ -69,22 +90,29 @@ export const balancesRouter = createTRPCRouter({
         if (debt.to === ctx.user.id) {
           // Someone owes the current user
           const existing = aggregated.get(debt.from);
+          const userInfo = userMap.get(debt.from);
           if (existing) {
             existing.amount += debt.amount;
+            // Update venmoUsername if we find one (may differ across groups)
+            if (userInfo?.venmoUsername) existing.venmoUsername = userInfo.venmoUsername;
           } else {
             aggregated.set(debt.from, {
-              userName: nameMap.get(debt.from) ?? "Unknown",
+              userName: userInfo?.name ?? "Unknown",
+              venmoUsername: userInfo?.venmoUsername ?? null,
               amount: debt.amount,
             });
           }
         } else if (debt.from === ctx.user.id) {
           // Current user owes someone
           const existing = aggregated.get(debt.to);
+          const userInfo = userMap.get(debt.to);
           if (existing) {
             existing.amount -= debt.amount;
+            if (userInfo?.venmoUsername) existing.venmoUsername = userInfo.venmoUsername;
           } else {
             aggregated.set(debt.to, {
-              userName: nameMap.get(debt.to) ?? "Unknown",
+              userName: userInfo?.name ?? "Unknown",
+              venmoUsername: userInfo?.venmoUsername ?? null,
               amount: -debt.amount,
             });
           }
@@ -92,14 +120,14 @@ export const balancesRouter = createTRPCRouter({
       }
     }
 
-    const owedToYou: { userId: string; userName: string; amount: number }[] = [];
-    const youOwe: { userId: string; userName: string; amount: number }[] = [];
+    const owedToYou: { userId: string; userName: string; venmoUsername: string | null; amount: number }[] = [];
+    const youOwe: { userId: string; userName: string; venmoUsername: string | null; amount: number }[] = [];
 
-    for (const [userId, { userName, amount }] of aggregated) {
+    for (const [userId, { userName, venmoUsername, amount }] of aggregated) {
       if (amount > 0) {
-        owedToYou.push({ userId, userName, amount });
+        owedToYou.push({ userId, userName, venmoUsername, amount });
       } else if (amount < 0) {
-        youOwe.push({ userId, userName, amount: -amount });
+        youOwe.push({ userId, userName, venmoUsername, amount: -amount });
       }
     }
 
@@ -112,11 +140,18 @@ export const balancesRouter = createTRPCRouter({
   getDashboard: protectedProcedure.query(async ({ ctx }) => {
     const groups = await ctx.db.group.findMany({
       where: { members: { some: { userId: ctx.user.id } }, archivedAt: null },
-      include: {
-        expenses: { include: { shares: true } },
-        settlements: true,
-        members: {
-          include: { user: { select: { id: true, name: true, image: true } } },
+      select: {
+        id: true,
+        name: true,
+        expenses: {
+          select: {
+            paidById: true,
+            amount: true,
+            shares: { select: { userId: true, amount: true } },
+          },
+        },
+        settlements: {
+          select: { fromId: true, toId: true, amount: true },
         },
       },
     });

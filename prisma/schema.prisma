@@ -26,6 +26,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -34,6 +35,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -55,6 +58,7 @@ model User {
   image           String?
   defaultCurrency String    @default("USD")
   locale          String    @default("en")
+  venmoUsername   String?
   suspendedAt     DateTime?
   isPlaceholder   Boolean   @default(false)
   placeholderName String?
@@ -72,6 +76,7 @@ model User {
   adminAuditLogs  AdminAuditLog[] @relation("AdminAuditLogs")
   systemInvitesUsed SystemInvite[] @relation("SystemInviteUsedBy")
   uploadedReceipts Receipt[] @relation("UploadedReceipts")
+  guestSplits      GuestSplit[] @relation("GuestSplits")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -109,6 +114,7 @@ model GroupMember {
   joinedAt DateTime @default(now())
 
   @@unique([userId, groupId])
+  @@index([groupId])
 }
 
 model GroupInvite {
@@ -125,6 +131,8 @@ model GroupInvite {
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  @@index([groupId])
 }
 
 enum GroupRole {
@@ -164,6 +172,7 @@ model Expense {
 
   @@index([groupId])
   @@index([paidById])
+  @@index([addedById])
 }
 
 model ExpenseShare {
@@ -178,6 +187,7 @@ model ExpenseShare {
   user    User    @relation(fields: [userId], references: [id])
 
   @@unique([expenseId, userId])
+  @@index([userId])
 }
 
 enum SplitMode {
@@ -202,6 +212,7 @@ model Receipt {
   extractedData Json?
   groupId       String?
   savedById     String?
+  paidById      String?
   uploadedById  String?
   isGuest       Boolean       @default(false)
 
@@ -212,6 +223,9 @@ model Receipt {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([groupId])
+  @@index([uploadedById])
 }
 
 model ReceiptItem {
@@ -265,6 +279,8 @@ model Settlement {
   settledAt DateTime @default(now())
 
   @@index([groupId])
+  @@index([fromId])
+  @@index([toId])
 }
 
 // ─── ACTIVITY LOG ──────────────────────────────────────────
@@ -272,7 +288,7 @@ model Settlement {
 model ActivityLog {
   id       String       @id @default(cuid())
   groupId  String
-  userId   String
+  userId   String?
   type     ActivityType
   // Polymorphic reference: entityId may point to an Expense, Settlement, or other entity
   // depending on the ActivityType. No Prisma relation is defined because a single FK
@@ -281,11 +297,12 @@ model ActivityLog {
   metadata Json?
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User  @relation(fields: [userId], references: [id])
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   @@index([groupId, createdAt])
+  @@index([userId])
 }
 
 enum ActivityType {
@@ -340,6 +357,7 @@ enum AdminAction {
   MERIDIAN_LOGOUT
   MERIDIAN_NOTIFY_PREFERENCE_CHANGED
   AI_PROVIDER_TESTED
+  VENMO_SETTING_CHANGED
 }
 
 model SystemSetting {
@@ -358,9 +376,14 @@ model SystemInvite {
   expiresAt DateTime?
   revokedAt DateTime?
 
-  usedBy User? @relation("SystemInviteUsedBy", fields: [usedById], references: [id])
+  usedBy User? @relation("SystemInviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+}
+
+enum GuestSplitStatus {
+  CLAIMING
+  FINALIZED
 }
 
 // ─── GUEST SPLITS (no auth required) ──────────────────────
@@ -374,7 +397,15 @@ model GuestSplit {
   people      Json     // [{name}]
   assignments Json     // [{itemIndex, personIndices}]
   summary     Json?    // [{name, itemTotal, tax, tip, total}]
-  paidByIndex Int      @default(0)
+  paidByIndex      Int              @default(0)
+  payerVenmoHandle String?
+  status           GuestSplitStatus @default(FINALIZED)
+  userId           String?
+  createdBy   User?    @relation("GuestSplits", fields: [userId], references: [id], onDelete: SetNull)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
 }

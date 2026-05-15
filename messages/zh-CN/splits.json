@@ -1,0 +1,17 @@
+{
+  "title": "我的分账",
+  "description": "访客分账历史记录",
+  "empty": "暂无分账",
+  "emptyDescription": "使用快速分账与朋友分摊账单。",
+  "goToSplit": "分摊账单",
+  "loadMore": "加载更多",
+  "people": "{count}人",
+  "items": "{count}项",
+  "claiming": "进行中",
+  "finalized": "已完成",
+  "untitled": "未命名分账",
+  "delete": "删除分账",
+  "deleteConfirm": "删除此分账？此操作无法撤销。",
+  "deleted": "分账已删除",
+  "loading": "加载中..."
+}

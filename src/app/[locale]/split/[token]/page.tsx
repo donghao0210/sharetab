@@ -1,16 +1,20 @@
 "use client";
 
-import { use } from "react";
-import { useLocale } from "next-intl";
+import { use, useState, useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
+import { useLocale, useTranslations } from "next-intl";
 import { trpc } from "@/lib/trpc";
 import { formatCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Copy, Share2, Receipt, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@/i18n/navigation";
+import { getInitials, guestAvatarColor } from "@/lib/avatar";
+import { buildVenmoPayUrl, isValidVenmoHandle } from "@/lib/venmo";
 
 export default function SharedSplitPage({
   params,
@@ -19,7 +23,33 @@ export default function SharedSplitPage({
 }) {
   const { token } = use(params);
   const locale = useLocale();
+  const tv = useTranslations("split.venmo");
+  const [venmoHandle, setVenmoHandle] = useState("");
+  const venmoInitRef = useRef(false);
+  const { data: authSession, status: authStatus } = useSession();
   const split = trpc.guest.getSplit.useQuery({ token });
+  const venmoSetting = trpc.admin.getVenmoEnabled.useQuery();
+  const profile = trpc.auth.getProfile.useQuery(undefined, {
+    enabled: !!authSession?.user && !!venmoSetting.data?.enabled,
+  });
+  const utils = trpc.useUtils();
+  const setPayerVenmoHandle = trpc.guest.setPayerVenmoHandle.useMutation({
+    onSuccess: () => { utils.guest.getSplit.invalidate({ token }); },
+  });
+
+  // Initialize venmo handle once from split record, then creator's profile as fallback
+  useEffect(() => {
+    if (venmoInitRef.current) return;
+    if (split.data?.payerVenmoHandle) {
+      setVenmoHandle(split.data.payerVenmoHandle);
+      venmoInitRef.current = true;
+    } else if (split.data?.isCreator && profile.data?.venmoUsername) {
+      setVenmoHandle(profile.data.venmoUsername);
+      venmoInitRef.current = true;
+    } else if (split.data && !split.isLoading && authStatus !== "loading" && (profile.isFetched || !authSession?.user)) {
+      venmoInitRef.current = true;
+    }
+  }, [split.data, profile.data?.venmoUsername, profile.isFetched, split.isLoading, authSession?.user, authStatus]);
 
   if (split.isLoading) {
     return (
@@ -77,23 +107,10 @@ export default function SharedSplitPage({
     toast.success("Link copied to clipboard");
   }
 
-  const initials = (name: string) =>
-    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
-
-  // Color palette for avatars
-  const colors = [
-    "bg-red-100 text-red-700",
-    "bg-blue-100 text-blue-700",
-    "bg-green-100 text-green-700",
-    "bg-purple-100 text-purple-700",
-    "bg-amber-100 text-amber-700",
-    "bg-pink-100 text-pink-700",
-    "bg-teal-100 text-teal-700",
-    "bg-indigo-100 text-indigo-700",
-  ];
+  const initials = getInitials;
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-24" data-testid="split-result">
       {/* Header */}
       <div className="text-center space-y-1 pt-4">
         <h1 className="text-2xl font-bold">
@@ -105,6 +122,30 @@ export default function SharedSplitPage({
         <p className="text-sm text-muted-foreground">
           Paid by <span className="font-medium text-foreground">{paidBy}</span>
         </p>
+        {venmoSetting.data?.enabled && currency === "USD" && (
+          split.data?.isCreator ? (
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <Input
+                placeholder={tv("handlePlaceholder")}
+                aria-label={tv("handle")}
+                value={venmoHandle}
+                onChange={(e) => setVenmoHandle(e.target.value)}
+                onBlur={() => {
+                  const trimmed = venmoHandle.trim() || null;
+                  if (trimmed !== (split.data?.payerVenmoHandle ?? null)) {
+                    setPayerVenmoHandle.mutate({ token, handle: trimmed });
+                  }
+                }}
+                className="h-8 text-sm max-w-48"
+                data-testid="venmo-handle-input"
+              />
+            </div>
+          ) : venmoHandle ? (
+            <p className="text-sm text-muted-foreground mt-1" data-testid="venmo-handle-display">
+              Venmo: @{venmoHandle.replace(/^@/, '')}
+            </p>
+          ) : null
+        )}
       </div>
 
       {/* Total */}
@@ -130,12 +171,12 @@ export default function SharedSplitPage({
             .filter(Boolean);
 
           return (
-            <Card key={idx}>
+            <Card key={idx} data-testid={`person-card-${idx}`}>
               <CardContent className="py-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10">
-                      <AvatarFallback className={`text-sm font-semibold ${colors[idx % colors.length]}`}>
+                      <AvatarFallback className={`text-sm font-semibold ${guestAvatarColor(idx)}`}>
                         {initials(person.name)}
                       </AvatarFallback>
                     </Avatar>
@@ -167,6 +208,18 @@ export default function SharedSplitPage({
                     </div>
                   )}
                 </div>
+
+                {venmoSetting.data?.enabled && currency === "USD" && isValidVenmoHandle(venmoHandle) && !split.data?.isPayer && person.personIndex !== data.paidByIndex && (
+                  <a
+                    href={buildVenmoPayUrl(venmoHandle, person.total, `ShareTab: ${data.receiptData.merchantName ?? 'Bill split'}`)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-[#008CFF] px-4 py-2 text-sm font-medium text-white hover:bg-[#0070CC] transition-colors"
+                    data-testid={`venmo-pay-${idx}`}
+                  >
+                    {tv("payVia", { amount: formatCents(person.total, currency, locale) })}
+                  </a>
+                )}
               </CardContent>
             </Card>
           );
@@ -218,11 +271,11 @@ export default function SharedSplitPage({
       {/* Share buttons - sticky bottom */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t">
         <div className="mx-auto max-w-lg flex gap-2">
-          <Button variant="outline" className="flex-1 h-14" onClick={handleCopy}>
+          <Button variant="outline" className="flex-1 h-14" onClick={handleCopy} data-testid="copy-link-btn">
             <Copy className="mr-2 h-5 w-5" />
             Copy Link
           </Button>
-          <Button className="flex-1 h-14" onClick={handleShare}>
+          <Button className="flex-1 h-14" onClick={handleShare} data-testid="share-btn">
             <Share2 className="mr-2 h-5 w-5" />
             Share
           </Button>

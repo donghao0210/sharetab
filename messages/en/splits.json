@@ -1,0 +1,17 @@
+{
+  "title": "My Splits",
+  "description": "Your guest bill split history",
+  "empty": "No splits yet",
+  "emptyDescription": "Use Quick Split to split a bill with friends.",
+  "goToSplit": "Split a bill",
+  "loadMore": "Load more",
+  "people": "{count} people",
+  "items": "{count} items",
+  "claiming": "In progress",
+  "finalized": "Complete",
+  "untitled": "Untitled split",
+  "delete": "Delete split",
+  "deleteConfirm": "Delete this split? This cannot be undone.",
+  "deleted": "Split deleted",
+  "loading": "Loading..."
+}

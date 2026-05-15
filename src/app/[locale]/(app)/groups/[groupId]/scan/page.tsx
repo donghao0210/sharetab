@@ -2,15 +2,18 @@
 
 import { Suspense, use, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Camera, Bookmark, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Camera, RefreshCw, Users } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
 import { ItemAssignment } from "@/components/receipts/item-assignment";
-import { loadingMessages } from "@/lib/loading-messages";
+import { loadingMessageKeys } from "@/lib/loading-messages";
 
 type Step = "upload" | "processing" | "assign" | "error";
 
@@ -34,6 +37,9 @@ function ScanReceiptContent({
   const { groupId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const t = useTranslations("expenses.scan");
+  const tc = useTranslations("common");
+  const { data: authSession } = useSession();
   const resumeReceiptId = searchParams.get("receiptId");
   const group = trpc.groups.get.useQuery({ groupId });
   const providerInfo = trpc.receipts.getScanProviderInfo.useQuery();
@@ -49,9 +55,9 @@ function ScanReceiptContent({
   // Rotate loading messages while processing
   useEffect(() => {
     if (step !== "processing") return;
-    setLoadingMsgIdx(Math.floor(Math.random() * loadingMessages.length));
+    setLoadingMsgIdx(Math.floor(Math.random() * loadingMessageKeys.length));
     const interval = setInterval(() => {
-      setLoadingMsgIdx((i) => (i + 1) % loadingMessages.length);
+      setLoadingMsgIdx((i) => (i + 1) % loadingMessageKeys.length);
     }, 5000);
     return () => clearInterval(interval);
   }, [step]);
@@ -64,11 +70,51 @@ function ScanReceiptContent({
     },
   });
 
-  const saveForLater = trpc.receipts.saveForLater.useMutation({
-    onSuccess: () => {
-      router.push(`/groups/${groupId}`);
-    },
-  });
+  const shareForClaiming = trpc.guest.createClaimSession.useMutation();
+  const receiptData = trpc.receipts.getReceiptItems.useQuery(
+    { receiptId: receiptId! },
+    { enabled: step === "assign" && !!receiptId }
+  );
+
+  async function handleShareForClaiming() {
+    if (!receiptId || !receiptData.data) return;
+    const { receipt, items } = receiptData.data;
+    const extracted = receipt.extractedData;
+    if (!extracted) return;
+
+    const currentMembers = members.filter((m) => m.name);
+    if (currentMembers.length < 1) return;
+
+    const myId = authSession?.user?.id;
+    const myMember = myId ? currentMembers.find(m => m.id === myId) : undefined;
+    const myName = myMember?.name ?? authSession?.user?.name ?? currentMembers[0]?.name ?? "Unknown";
+
+    try {
+      const result = await shareForClaiming.mutateAsync({
+        receiptId,
+        receiptData: {
+          merchantName: extracted.merchantName,
+          date: extracted.date,
+          subtotal: extracted.subtotal,
+          tax: extracted.tax,
+          tip: extracted.tip ?? 0,
+          total: extracted.total ?? (extracted.subtotal + extracted.tax + (extracted.tip ?? 0)),
+          currency: extracted.currency ?? "USD",
+        },
+        items: items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          totalPrice: i.totalPrice,
+        })),
+        creatorName: myName,
+        paidByName: myName,
+      });
+      router.push(`/split/${result.shareToken}/claim`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("createSessionFailed"));
+    }
+  }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -87,8 +133,12 @@ function ScanReceiptContent({
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? "Upload failed");
+        let message = t("uploadFailed");
+        try {
+          const data = await res.json();
+          message = data.error ?? message;
+        } catch {}
+        throw new Error(message);
       }
 
       const data = await res.json();
@@ -100,7 +150,7 @@ function ScanReceiptContent({
       processReceipt.mutate({ receiptId: data.receiptId, groupId });
     } catch (err) {
       setUploading(false);
-      setErrorMessage(err instanceof Error ? err.message : "Upload failed");
+      setErrorMessage(err instanceof Error ? err.message : t("uploadFailed"));
       setStep("error");
     }
   }
@@ -109,10 +159,6 @@ function ScanReceiptContent({
     router.push(`/groups/${groupId}`);
   }
 
-  function handleSaveForLater() {
-    if (!receiptId) return;
-    saveForLater.mutate({ groupId, receiptId });
-  }
 
   const members =
     group.data?.members.map((m) => ({
@@ -124,13 +170,42 @@ function ScanReceiptContent({
     providerInfo.data?.configuredProviders?.join(" -> ") ?? "loading...";
   const activeProvider = providerInfo.data?.activeProvider ?? "checking...";
 
+  // Loading state for group data (Finding #22)
+  if (group.isLoading) {
+    return (
+      <div className="mx-auto max-w-lg flex flex-col items-center gap-4 py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground">{t("loadingGroup")}</p>
+      </div>
+    );
+  }
+
+  // Error state for group data (Finding #22)
+  if (group.error) {
+    return (
+      <div className="mx-auto max-w-lg space-y-6">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" aria-label={tc("actions.back")} nativeButton={false} render={<Link href={`/groups/${groupId}`} />}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+        </div>
+        <Card className="border-destructive/50">
+          <CardContent className="py-6">
+            <p className="text-destructive">{t("groupLoadError")}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" nativeButton={false} render={<Link href={`/groups/${groupId}`} />}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold">Scan Receipt</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
       </div>
 
       {step === "upload" && (
@@ -138,21 +213,20 @@ function ScanReceiptContent({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Camera className="h-5 w-5" />
-              Upload a receipt
+              {t("upload")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Take a photo or upload an image of your receipt. AI will extract the
-              items, tax, and tip so you can assign them to group members.
+              {t("uploadDescription")}
             </p>
             <p className="text-xs text-muted-foreground">
-              Active provider: <span className="font-medium text-foreground">{activeProvider}</span>
-              {" · "}Fallback chain: <span className="font-medium text-foreground">{configuredProviderChain}</span>
+              {t("activeProvider")} <span className="font-medium text-foreground">{activeProvider}</span>
+              {" · "}{t("fallbackChain")} <span className="font-medium text-foreground">{configuredProviderChain}</span>
             </p>
 
             <div className="space-y-2">
-              <Label htmlFor="receipt">Receipt image</Label>
+              <Label htmlFor="receipt">{t("receiptImage")}</Label>
               <Input
                 id="receipt"
                 type="file"
@@ -160,13 +234,14 @@ function ScanReceiptContent({
                 onChange={handleFileUpload}
                 disabled={uploading}
                 className="cursor-pointer"
+                data-testid="scan-file-input"
               />
             </div>
 
             {uploading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Uploading...
+                {t("uploading")}
               </div>
             )}
           </CardContent>
@@ -174,17 +249,17 @@ function ScanReceiptContent({
       )}
 
       {step === "processing" && (
-        <Card>
+        <Card data-testid="scan-processing">
           <CardContent className="flex flex-col items-center gap-4 py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <div className="text-center space-y-2">
-              <p className="font-medium">Processing receipt...</p>
+              <p className="font-medium">{t("processing")}</p>
               <p className="text-xs text-muted-foreground">
-                Using: <span className="font-medium text-foreground">{activeProvider}</span>
-                {" · "}Chain: <span className="font-medium text-foreground">{configuredProviderChain}</span>
+                {t("using")} <span className="font-medium text-foreground">{activeProvider}</span>
+                {" · "}{t("chain")} <span className="font-medium text-foreground">{configuredProviderChain}</span>
               </p>
               <p className="text-sm text-muted-foreground">
-                {loadingMessages[loadingMsgIdx]}
+                {tc(loadingMessageKeys[loadingMsgIdx])}
               </p>
             </div>
           </CardContent>
@@ -194,40 +269,46 @@ function ScanReceiptContent({
       {step === "assign" && receiptId && (
         <>
           <ItemAssignment
+            key={receiptId}
             groupId={groupId}
             receiptId={receiptId}
             members={members}
             onComplete={handleExpenseCreated}
+            onSaveForLater={() => router.push(`/groups/${groupId}`)}
           />
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs">{t("or")}</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleShareForClaiming}
+            disabled={shareForClaiming.isPending || !authSession?.user?.id || !receiptData.data?.receipt?.extractedData || !receiptData.data?.items?.length || members.length < 1}
+            data-testid="group-share-claiming-btn"
+          >
+            <Users className="mr-2 h-4 w-4" />
+            {shareForClaiming.isPending ? t("creatingSession") : t("shareForClaiming")}
+          </Button>
           <div className="space-y-2">
             {!showRescan ? (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowRescan(true)}
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Rescan with corrections
-                </Button>
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={handleSaveForLater}
-                  disabled={saveForLater.isPending}
-                >
-                  <Bookmark className="mr-2 h-4 w-4" />
-                  {saveForLater.isPending ? "Saving..." : "Save for Later"}
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowRescan(true)}
+                data-testid="scan-rescan-btn"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {t("rescanCorrections")}
+              </Button>
             ) : (
               <Card>
                 <CardContent className="space-y-3 pt-4">
                   <p className="text-sm text-muted-foreground">
-                    Describe what needs to be corrected and AI will re-scan the receipt.
+                    {t("rescanDescription")}
                   </p>
                   <textarea
-                    placeholder='e.g., "The total should be 45.99, not 54.99" or "There are 3 tacos, not 1"'
+                    placeholder={t("rescanPlaceholder")}
                     value={correctionHint}
                     onChange={(e) => setCorrectionHint(e.target.value)}
                     rows={3}
@@ -245,13 +326,13 @@ function ScanReceiptContent({
                       disabled={!correctionHint.trim()}
                     >
                       <RefreshCw className="mr-2 h-4 w-4" />
-                      Rescan
+                      {t("rescan")}
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => { setShowRescan(false); setCorrectionHint(""); }}
                     >
-                      Cancel
+                      {t("cancel")}
                     </Button>
                   </div>
                 </CardContent>
@@ -269,7 +350,7 @@ function ScanReceiptContent({
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setStep("upload")}>
-                Try again
+                {t("retry")}
               </Button>
               {receiptId && (
                 <Button
@@ -278,7 +359,7 @@ function ScanReceiptContent({
                     processReceipt.mutate({ receiptId, groupId });
                   }}
                 >
-                  Retry processing
+                  {t("retryProcessing")}
                 </Button>
               )}
             </div>

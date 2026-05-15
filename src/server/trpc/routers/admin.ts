@@ -14,6 +14,7 @@ import {
 } from "@/generated/prisma/client";
 import nodemailer from "nodemailer";
 import fs from "fs";
+import * as fsp from "fs/promises";
 import path from "path";
 import { getRecentLogs } from "@/server/lib/logger";
 import {
@@ -39,7 +40,10 @@ import {
   isLoginInProgress as isOpenAICodexLoginInProgress,
 } from "@/server/lib/openai-codex-login";
 
+import { getBuildInfo } from "@/server/lib/build-info";
+
 const serverStartTime = new Date();
+const { version: cachedVersion, commitSha: cachedCommitSha } = getBuildInfo();
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -193,16 +197,6 @@ export const adminRouter = createTRPCRouter({
       aiStatus = "unavailable";
     }
 
-    // App version
-    let version = "unknown";
-    try {
-      const pkgPath = path.resolve(process.cwd(), "package.json");
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-      version = pkg.version;
-    } catch {
-      // ignore
-    }
-
     return {
       dbStatus,
       aiProvider,
@@ -210,7 +204,8 @@ export const adminRouter = createTRPCRouter({
       ocrFallback,
       aiStatus,
       authProvidersNeedingLogin,
-      version,
+      version: cachedVersion,
+      commitSha: cachedCommitSha,
       serverStartTime: serverStartTime.toISOString(),
       uptime: Math.floor((Date.now() - serverStartTime.getTime()) / 1000),
     };
@@ -370,7 +365,7 @@ export const adminRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const user = await ctx.db.user.findUnique({
         where: { id: input.userId },
-        select: { id: true, email: true, suspendedAt: true },
+        select: { id: true, email: true, suspendedAt: true, isPlaceholder: true },
       });
 
       if (!user) {
@@ -381,6 +376,13 @@ export const adminRouter = createTRPCRouter({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "User is not suspended",
+        });
+      }
+
+      if (user.isPlaceholder) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot unsuspend a placeholder or deleted account",
         });
       }
 
@@ -422,7 +424,58 @@ export const adminRouter = createTRPCRouter({
         });
       }
 
-      await ctx.db.user.delete({ where: { id: input.userId } });
+      await ctx.db.$transaction(async (tx) => {
+        // Convert to placeholder to preserve financial history, then strip auth data
+        await tx.user.update({
+          where: { id: input.userId },
+          data: {
+            isPlaceholder: true,
+            name: "Deleted user",
+            placeholderName: "Deleted user",
+            email: `deleted-${input.userId}@placeholder.local`,
+            passwordHash: null,
+            image: null,
+            venmoUsername: null,
+            suspendedAt: new Date(),
+          },
+        });
+        // Remove auth records (sessions, accounts)
+        await tx.account.deleteMany({ where: { userId: input.userId } });
+        await tx.session.deleteMany({ where: { userId: input.userId } });
+        // Transfer ownership before removing memberships
+        const ownedGroups = await tx.groupMember.findMany({
+          where: { userId: input.userId, role: "OWNER" },
+          select: { groupId: true },
+        });
+        const keepMembershipGroupIds: string[] = [];
+        for (const { groupId } of ownedGroups) {
+          const nextOwner = await tx.groupMember.findFirst({
+            where: {
+              groupId,
+              userId: { not: input.userId },
+              user: { isPlaceholder: false, suspendedAt: null },
+            },
+            orderBy: { joinedAt: "asc" },
+          });
+          if (nextOwner) {
+            await tx.groupMember.update({
+              where: { id: nextOwner.id },
+              data: { role: "OWNER" },
+            });
+          } else {
+            keepMembershipGroupIds.push(groupId);
+          }
+        }
+        // Remove memberships except where user is the sole active owner
+        await tx.groupMember.deleteMany({
+          where: {
+            userId: input.userId,
+            ...(keepMembershipGroupIds.length > 0
+              ? { groupId: { notIn: keepMembershipGroupIds } }
+              : {}),
+          },
+        });
+      });
 
       await logAdminAction(ctx.db, ctx.user.id, "USER_DELETED", input.userId, {
         email: user.email,
@@ -698,6 +751,7 @@ export const adminRouter = createTRPCRouter({
 
   listSystemInvites: adminProcedure.query(async ({ ctx }) => {
     const invites = await ctx.db.systemInvite.findMany({
+      take: 200,
       include: {
         usedBy: { select: { id: true, name: true, email: true } },
       },
@@ -791,8 +845,8 @@ export const adminRouter = createTRPCRouter({
           type: item.type,
           entityId: item.entityId,
           metadata: item.metadata as Record<string, unknown> | null,
-          userName: item.user.name ?? item.user.email,
-          userEmail: item.user.email,
+          userName: item.user?.name ?? item.user?.email ?? "Deleted user",
+          userEmail: item.user?.email ?? null,
           groupName: item.group.name,
           groupId: item.group.id,
           createdAt: item.createdAt,
@@ -836,6 +890,35 @@ export const adminRouter = createTRPCRouter({
         "ANNOUNCEMENT_SET",
         null,
         { message: input.message ?? null }
+      );
+
+      return { success: true };
+    }),
+
+  // ─── Venmo Payments Toggle ──────────────────────────────
+
+  getVenmoEnabled: publicProcedure.query(async ({ ctx }) => {
+    const setting = await ctx.db.systemSetting.findUnique({
+      where: { key: "venmoEnabled" },
+    });
+    return { enabled: setting?.value === "true" };
+  }),
+
+  setVenmoEnabled: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.systemSetting.upsert({
+        where: { key: "venmoEnabled" },
+        update: { value: String(input.enabled) },
+        create: { key: "venmoEnabled", value: String(input.enabled) },
+      });
+
+      await logAdminAction(
+        ctx.db,
+        ctx.user.id,
+        "VENMO_SETTING_CHANGED",
+        null,
+        { enabled: input.enabled }
       );
 
       return { success: true };
@@ -922,20 +1005,18 @@ export const adminRouter = createTRPCRouter({
     let diskFiles = 0;
 
     if (fs.existsSync(uploadDir)) {
-      const scanDir = (dir: string) => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const scanDir = async (dir: string) => {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
-            scanDir(fullPath);
+            await scanDir(fullPath);
           } else {
             diskFiles++;
-            const stat = fs.statSync(fullPath);
+            const stat = await fsp.stat(fullPath);
             totalDiskUsage += stat.size;
 
-            // Check if this file is referenced in DB
             const relativePath = path.relative(uploadDir, fullPath).replace(/\\/g, "/");
-            // Receipt imagePath may be stored as relative or with uploads/ prefix
             const isReferenced =
               dbPaths.has(relativePath) ||
               dbPaths.has(`uploads/${relativePath}`) ||
@@ -949,7 +1030,7 @@ export const adminRouter = createTRPCRouter({
           }
         }
       };
-      scanDir(uploadDir);
+      await scanDir(uploadDir);
     }
 
     return {
@@ -978,17 +1059,16 @@ export const adminRouter = createTRPCRouter({
     let freedBytes = 0;
 
     if (fs.existsSync(uploadDir)) {
-      const scanAndDelete = (dir: string) => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const scanAndDelete = async (dir: string) => {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
-            scanAndDelete(fullPath);
-            // Remove empty directories
+            await scanAndDelete(fullPath);
             try {
-              const remaining = fs.readdirSync(fullPath);
+              const remaining = await fsp.readdir(fullPath);
               if (remaining.length === 0) {
-                fs.rmdirSync(fullPath);
+                await fsp.rm(fullPath);
               }
             } catch {
               // ignore
@@ -1002,15 +1082,15 @@ export const adminRouter = createTRPCRouter({
               dbPaths.has(fullPath);
 
             if (!isReferenced) {
-              const stat = fs.statSync(fullPath);
+              const stat = await fsp.stat(fullPath);
               freedBytes += stat.size;
-              fs.unlinkSync(fullPath);
+              await fsp.unlink(fullPath);
               deletedCount++;
             }
           }
         }
       };
-      scanAndDelete(uploadDir);
+      await scanAndDelete(uploadDir);
     }
 
     if (deletedCount > 0) {

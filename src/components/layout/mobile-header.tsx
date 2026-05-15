@@ -20,6 +20,7 @@ import {
   Settings,
   Shield,
   Menu,
+  Scissors,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/dashboard", key: "dashboard", icon: LayoutDashboard },
   { href: "/groups", key: "groups", icon: Users },
   { href: "/split", key: "quickSplit", icon: Receipt },
+  { href: "/splits", key: "mySplits", icon: Scissors },
   { href: "/settings", key: "settings", icon: Settings },
 ] as const;
 
@@ -46,7 +48,7 @@ export function MobileHeader({ isAdmin }: { isAdmin?: boolean }) {
       </div>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger render={<Button variant="ghost" size="icon" />}>
+        <SheetTrigger render={<Button variant="ghost" size="icon" aria-label={t("actions.openMenu")} />}>
           <Menu className="h-5 w-5" />
         </SheetTrigger>
         <SheetContent side="right" className="w-64">
