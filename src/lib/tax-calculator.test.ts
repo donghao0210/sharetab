@@ -5,6 +5,7 @@ describe("computeTax", () => {
   test("zero rates: total equals subtotal", () => {
     expect(computeTax({ subtotalCents: 10000, servicePercent: 0, taxPercent: 0 })).toEqual({
       subtotalCents: 10000,
+      discountCents: 0,
       serviceChargeCents: 0,
       taxCents: 0,
       totalCents: 10000,
@@ -56,6 +57,7 @@ describe("computeTax", () => {
   test("negative inputs are clamped to zero", () => {
     const r = computeTax({ subtotalCents: -100, servicePercent: -10, taxPercent: -6 });
     expect(r.subtotalCents).toBe(0);
+    expect(r.discountCents).toBe(0);
     expect(r.serviceChargeCents).toBe(0);
     expect(r.taxCents).toBe(0);
     expect(r.totalCents).toBe(0);
@@ -66,5 +68,63 @@ describe("computeTax", () => {
     expect(r.totalCents).toBe(0);
     expect(r.serviceChargeCents).toBe(0);
     expect(r.taxCents).toBe(0);
+  });
+
+  // ─── discount tests ───────────────────────────────────────
+
+  test("discount reduces the base for both service and tax (MY order)", () => {
+    // RM100 subtotal - RM10 discount = RM90 base
+    // + 10% service on RM90 = RM9.00
+    // + 6% tax on RM99 = RM5.94 → 594 cents
+    // total = 9000 + 900 + 594 = 10494
+    const r = computeTax({
+      subtotalCents: 10000,
+      discountCents: 1000,
+      servicePercent: 10,
+      taxPercent: 6,
+    });
+    expect(r.discountCents).toBe(1000);
+    expect(r.serviceChargeCents).toBe(900);
+    expect(r.taxCents).toBe(594);
+    expect(r.totalCents).toBe(10494);
+  });
+
+  test("discount with no service or tax just subtracts from subtotal", () => {
+    const r = computeTax({
+      subtotalCents: 5000,
+      discountCents: 500,
+      servicePercent: 0,
+      taxPercent: 0,
+    });
+    expect(r.discountCents).toBe(500);
+    expect(r.totalCents).toBe(4500);
+  });
+
+  test("discount larger than subtotal is clamped to subtotal", () => {
+    const r = computeTax({
+      subtotalCents: 1000,
+      discountCents: 5000,
+      servicePercent: 10,
+      taxPercent: 6,
+    });
+    expect(r.discountCents).toBe(1000); // clamped
+    expect(r.totalCents).toBe(0); // everything zeroed out
+  });
+
+  test("negative discount is clamped to zero", () => {
+    const r = computeTax({
+      subtotalCents: 10000,
+      discountCents: -500,
+      servicePercent: 0,
+      taxPercent: 0,
+    });
+    expect(r.discountCents).toBe(0);
+    expect(r.totalCents).toBe(10000);
+  });
+
+  test("omitting discountCents is equivalent to passing 0", () => {
+    const a = computeTax({ subtotalCents: 10000, servicePercent: 10, taxPercent: 6 });
+    const b = computeTax({ subtotalCents: 10000, discountCents: 0, servicePercent: 10, taxPercent: 6 });
+    expect(a).toEqual(b);
   });
 });

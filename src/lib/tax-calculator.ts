@@ -1,32 +1,39 @@
 export type TaxBreakdown = {
   subtotalCents: number;
+  discountCents: number;
   serviceChargeCents: number;
   taxCents: number;
   totalCents: number;
 };
 
 /**
- * Compute tax/service breakdown for an expense.
+ * Compute tax / service / discount breakdown for an expense.
  *
  * Order (Malaysian convention, also valid for US tip-on-pretax + tax-on-pretax):
- *   1. service charge = subtotal * (servicePercent / 100)
- *   2. tax            = (subtotal + service) * (taxPercent / 100)
- *   3. total          = subtotal + service + tax
+ *   1. discounted subtotal = subtotal - discount
+ *   2. service charge      = discounted subtotal * (servicePercent / 100)
+ *   3. tax                 = (discounted subtotal + service) * (taxPercent / 100)
+ *   4. total               = discounted subtotal + service + tax
  *
- * Each component is rounded to the nearest cent independently.
+ * Each component is rounded to the nearest cent independently. Discount is
+ * clamped to the subtotal so the discounted subtotal is never negative.
  */
 export function computeTax(params: {
   subtotalCents: number;
+  discountCents?: number;
   servicePercent: number;
   taxPercent: number;
 }): TaxBreakdown {
   const subtotalCents = Math.max(0, Math.round(params.subtotalCents));
+  const requestedDiscount = Math.max(0, Math.round(params.discountCents ?? 0));
+  const discountCents = Math.min(subtotalCents, requestedDiscount);
   const servicePercent = Math.max(0, params.servicePercent);
   const taxPercent = Math.max(0, params.taxPercent);
 
-  const serviceChargeCents = Math.round((subtotalCents * servicePercent) / 100);
-  const taxCents = Math.round(((subtotalCents + serviceChargeCents) * taxPercent) / 100);
-  const totalCents = subtotalCents + serviceChargeCents + taxCents;
+  const discountedSubtotal = subtotalCents - discountCents;
+  const serviceChargeCents = Math.round((discountedSubtotal * servicePercent) / 100);
+  const taxCents = Math.round(((discountedSubtotal + serviceChargeCents) * taxPercent) / 100);
+  const totalCents = discountedSubtotal + serviceChargeCents + taxCents;
 
-  return { subtotalCents, serviceChargeCents, taxCents, totalCents };
+  return { subtotalCents, discountCents, serviceChargeCents, taxCents, totalCents };
 }

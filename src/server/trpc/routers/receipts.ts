@@ -150,6 +150,11 @@ export const receiptsRouter = createTRPCRouter({
             subtotal: number;
             tax: number;
             tip: number;
+            serviceCharge?: number;
+            discount?: number;
+            taxPct?: number | null;
+            servicePct?: number | null;
+            pricesIncludeTax?: boolean;
             total: number;
             currency: string;
           } | null,

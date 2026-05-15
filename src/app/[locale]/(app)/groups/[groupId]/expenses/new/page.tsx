@@ -3,9 +3,10 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
 import { trpc } from "@/lib/trpc";
-import { formatCents, parseToCents } from "@/lib/money";
+import { centsToDecimal, formatCents, parseToCents } from "@/lib/money";
 import { computeTax } from "@/lib/tax-calculator";
 import { getTaxPresets } from "@/lib/tax-presets";
 import { Button } from "@/components/ui/button";
@@ -49,10 +50,17 @@ export default function NewExpensePage({
   const router = useRouter();
   const locale = useLocale();
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const receiptId = searchParams.get("receiptId") ?? undefined;
   const group = trpc.groups.get.useQuery({ groupId });
+  const receiptQuery = trpc.receipts.getReceiptItems.useQuery(
+    { receiptId: receiptId ?? "" },
+    { enabled: !!receiptId },
+  );
 
   const [title, setTitle] = useState("");
   const [subtotalStr, setSubtotalStr] = useState("");
+  const [discountStr, setDiscountStr] = useState("");
   const [servicePercentStr, setServicePercentStr] = useState("0");
   const [taxPercentStr, setTaxPercentStr] = useState("0");
   const [receiptTotalStr, setReceiptTotalStr] = useState("");
@@ -60,6 +68,7 @@ export default function NewExpensePage({
   const [paidById, setPaidById] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
   const [shares, setShares] = useState<ShareEntry[]>([]);
+  const [prefilled, setPrefilled] = useState(false);
 
   const createExpense = trpc.expenses.create.useMutation({
     onSuccess: () => {
@@ -84,21 +93,44 @@ export default function NewExpensePage({
     }
   }, [paidById, session?.user?.id, members]);
 
+  // Pre-fill from a scanned receipt when ?receiptId=... is present.
+  // Runs once after the receipt query resolves; user edits afterwards are preserved.
+  useEffect(() => {
+    if (prefilled) return;
+    const extracted = receiptQuery.data?.receipt.extractedData;
+    if (!extracted) return;
+
+    if (extracted.merchantName) setTitle(extracted.merchantName);
+    if (extracted.subtotal > 0) setSubtotalStr(centsToDecimal(extracted.subtotal));
+    if (extracted.discount && extracted.discount > 0) {
+      setDiscountStr(centsToDecimal(extracted.discount));
+    }
+    if (typeof extracted.taxPct === "number") setTaxPercentStr(String(extracted.taxPct));
+    if (typeof extracted.servicePct === "number") setServicePercentStr(String(extracted.servicePct));
+    if (extracted.total > 0) setReceiptTotalStr(centsToDecimal(extracted.total));
+
+    setPrefilled(true);
+  }, [prefilled, receiptQuery.data]);
+
   const groupCurrency = group.data?.currency ?? "USD";
   const presets = useMemo(() => getTaxPresets(groupCurrency), [groupCurrency]);
   const hasBreakdown = useMemo(
-    () => parseFloat(servicePercentStr || "0") > 0 || parseFloat(taxPercentStr || "0") > 0,
-    [servicePercentStr, taxPercentStr]
+    () =>
+      parseFloat(servicePercentStr || "0") > 0 ||
+      parseFloat(taxPercentStr || "0") > 0 ||
+      parseToCents(discountStr) > 0,
+    [servicePercentStr, taxPercentStr, discountStr]
   );
 
   const breakdown = useMemo(
     () =>
       computeTax({
         subtotalCents: parseToCents(subtotalStr),
+        discountCents: parseToCents(discountStr),
         servicePercent: parseFloat(servicePercentStr || "0") || 0,
         taxPercent: parseFloat(taxPercentStr || "0") || 0,
       }),
-    [subtotalStr, servicePercentStr, taxPercentStr]
+    [subtotalStr, discountStr, servicePercentStr, taxPercentStr]
   );
   const receiptTotalCents = parseToCents(receiptTotalStr);
   const useReceiptTotal = receiptTotalStr.trim() !== "" && receiptTotalCents > 0;
@@ -123,6 +155,7 @@ export default function NewExpensePage({
             subtotal: breakdown.subtotalCents,
             serviceCharge: breakdown.serviceChargeCents,
             tax: breakdown.taxCents,
+            ...(breakdown.discountCents > 0 ? { discount: breakdown.discountCents } : {}),
             ...(roundingCents !== 0 ? { rounding: roundingCents } : {}),
           }
         : {}),
@@ -130,6 +163,7 @@ export default function NewExpensePage({
       paidById,
       splitMode,
       shares,
+      ...(receiptId ? { receiptId } : {}),
     });
   }
 
@@ -174,6 +208,22 @@ export default function NewExpensePage({
                 required
               />
               <p className="text-xs text-muted-foreground">Pre-tax/service amount</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="discount">Discount (optional)</Label>
+              <Input
+                id="discount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={discountStr}
+                onChange={(e) => setDiscountStr(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Subtracted from the subtotal before service and tax (e.g. lunch / student / promo discount)
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -250,6 +300,12 @@ export default function NewExpensePage({
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatCents(breakdown.subtotalCents, groupCurrency, locale)}</span>
                 </div>
+                {breakdown.discountCents > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Discount</span>
+                    <span>−{formatCents(breakdown.discountCents, groupCurrency, locale)}</span>
+                  </div>
+                )}
                 {breakdown.serviceChargeCents > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Service / Tip</span>
