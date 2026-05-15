@@ -14,6 +14,15 @@ export const receiptExtractionSchema = z.object({
   subtotal: z.number().int().min(0),
   tax: z.number().int().min(0).default(0),
   tip: z.number().int().min(0).default(0),
+  // Merchant-added service charge, distinct from customer-added tip.
+  serviceCharge: z.number().int().min(0).default(0),
+  // Absolute discount amount as printed (positive integer in cents).
+  discount: z.number().int().min(0).default(0),
+  // Percentages when explicitly printed alongside the tax / service lines.
+  taxPct: z.number().min(0).max(100).nullable().optional(),
+  servicePct: z.number().min(0).max(100).nullable().optional(),
+  // True if item prices already include tax (e.g. "Prices include GST").
+  pricesIncludeTax: z.boolean().default(false),
   total: z.number().int().min(0),
   currency: z.string().default("USD"),
   confidence: z.number().min(0).max(1).optional(),

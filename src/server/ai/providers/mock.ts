@@ -45,7 +45,9 @@ export class MockProvider implements AIProvider {
     const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
     const tax = Math.round(subtotal * 0.08); // 8% tax
     const tip = 0;
-    const total = subtotal + tax + tip;
+    const serviceCharge = 0;
+    const discount = 0;
+    const total = subtotal + serviceCharge + tax + tip - discount;
 
     return {
       merchantName: "The Golden Fork",
@@ -54,6 +56,11 @@ export class MockProvider implements AIProvider {
       subtotal,
       tax,
       tip,
+      serviceCharge,
+      discount,
+      taxPct: 8,
+      servicePct: null,
+      pricesIncludeTax: false,
       total,
       currency: "USD",
       confidence: 0.95,
