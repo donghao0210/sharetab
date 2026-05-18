@@ -6,6 +6,7 @@ import { createTRPCRouter, protectedProcedure, groupMemberProcedure } from "../i
 import { processReceiptImage } from "../../lib/receipt-processor";
 import { logger } from "../../lib/logger";
 import { parseExtractedData } from "../../lib/json-schemas";
+import { computeUserTotalsFromClaims } from "../../lib/expense-from-claims";
 import {
   getAIProvidersWithFallback,
   getConfiguredProviderPriority,
@@ -452,57 +453,13 @@ export const receiptsRouter = createTRPCRouter({
         }
       }
 
-      // Calculate per-user item subtotals
-      const userSubtotals = new Map<string, number>();
-
-      for (const assignment of input.assignments) {
-        const item = itemMap.get(assignment.receiptItemId)!;
-
-        const perPerson = Math.floor(item.totalPrice / assignment.userIds.length);
-        const remainder = item.totalPrice - perPerson * assignment.userIds.length;
-
-        for (let i = 0; i < assignment.userIds.length; i++) {
-          const userId = assignment.userIds[i];
-          const amount = perPerson + (i < remainder ? 1 : 0);
-          userSubtotals.set(userId, (userSubtotals.get(userId) ?? 0) + amount);
-        }
-      }
-
-      // Proportionally distribute tax and tip using receipt subtotal as denominator.
-      // This ensures each assigned item gets its fair share of tax/tip relative to
-      // the full receipt subtotal, even when not all items are assigned.
-      const actualSubtotal = Array.from(userSubtotals.values()).reduce(
-        (a, b) => a + b,
-        0
-      );
-      const receiptSubtotal = extractedData.subtotal > 0 ? extractedData.subtotal : actualSubtotal;
-      const totalAmount = actualSubtotal + tax + tip;
-
-      const userTotals = new Map<string, number>();
-      let allocatedTotal = 0;
-      const userEntries = Array.from(userSubtotals.entries());
-
-      for (let i = 0; i < userEntries.length; i++) {
-        const [userId, itemTotal] = userEntries[i];
-        const proportion = receiptSubtotal > 0 ? itemTotal / receiptSubtotal : 0;
-
-        let userTax: number;
-        let userTip: number;
-
-        if (i === userEntries.length - 1) {
-          // Last user gets remainder to prevent off-by-one
-          const alreadyAllocated = allocatedTotal;
-          const userTotal = totalAmount - alreadyAllocated;
-          userTotals.set(userId, userTotal);
-          allocatedTotal += userTotal;
-        } else {
-          userTax = Math.round(tax * proportion);
-          userTip = Math.round(tip * proportion);
-          const userTotal = itemTotal + userTax + userTip;
-          userTotals.set(userId, userTotal);
-          allocatedTotal += userTotal;
-        }
-      }
+      const { userTotals, totalAmount } = computeUserTotalsFromClaims({
+        items: receipt.items.map((i) => ({ id: i.id, totalPrice: i.totalPrice })),
+        assignments: input.assignments.map((a) => ({ itemId: a.receiptItemId, userIds: a.userIds })),
+        tax,
+        tip,
+        receiptSubtotal: extractedData.subtotal,
+      });
 
       // Save assignments in a single batch (replaces N×M individual upserts)
       const assignmentData = input.assignments.flatMap((a) =>

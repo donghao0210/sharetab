@@ -282,5 +282,17 @@
     "step1Label": "Schritt 1:",
     "step2Label": "Schritt 2:",
     "step2Hint": "Der OpenAI-Ablauf leitet auf localhost:1455 um. Dieser Callback soll hier im Browser fehlschlagen, kopieren Sie daher die vollständige umgeleitete URL aus der Adressleiste."
+  },
+  "malaysianPayments": {
+    "title": "Malaysian Payment Methods",
+    "description": "When enabled, split results in MYR show the payer's TNG eWallet phone number and DuitNow QR for easy in-app payments.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "tngLabel": "Touch 'n Go eWallet",
+    "tngEnabledStatus": "TNG phone numbers are visible on MYR splits",
+    "tngDisabledStatus": "TNG phone numbers are hidden",
+    "duitNowLabel": "DuitNow QR",
+    "duitNowEnabledStatus": "DuitNow QR codes are visible on MYR splits",
+    "duitNowDisabledStatus": "DuitNow QR codes are hidden"
   }
 }

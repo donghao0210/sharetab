@@ -144,7 +144,15 @@ export const authRouter = createTRPCRouter({
   getProfile: protectedProcedure.query(async ({ ctx }) => {
     const user = await ctx.db.user.findUnique({
       where: { id: ctx.user.id },
-      select: { name: true, email: true, venmoUsername: true, locale: true, defaultCurrency: true },
+      select: {
+        name: true,
+        email: true,
+        venmoUsername: true,
+        tngPhoneNumber: true,
+        duitNowQrPath: true,
+        locale: true,
+        defaultCurrency: true,
+      },
     });
     if (!user) {
       throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
@@ -159,6 +167,8 @@ export const authRouter = createTRPCRouter({
         defaultCurrency: z.string().length(3).optional(),
         locale: z.enum(locales).optional(),
         venmoUsername: z.string().max(50).nullable().optional(),
+        tngPhoneNumber: z.string().max(32).nullable().optional(),
+        duitNowQrPath: z.string().max(255).nullable().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -167,11 +177,25 @@ export const authRouter = createTRPCRouter({
         ...(input.venmoUsername !== undefined
           ? { venmoUsername: input.venmoUsername?.trim() || null }
           : {}),
+        ...(input.tngPhoneNumber !== undefined
+          ? { tngPhoneNumber: input.tngPhoneNumber?.trim() || null }
+          : {}),
+        ...(input.duitNowQrPath !== undefined
+          ? { duitNowQrPath: input.duitNowQrPath?.trim() || null }
+          : {}),
       };
       const user = await ctx.db.user.update({
         where: { id: ctx.user.id },
         data,
       });
-      return { id: user.id, name: user.name, email: user.email, locale: user.locale, venmoUsername: user.venmoUsername };
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        locale: user.locale,
+        venmoUsername: user.venmoUsername,
+        tngPhoneNumber: user.tngPhoneNumber,
+        duitNowQrPath: user.duitNowQrPath,
+      };
     }),
 });

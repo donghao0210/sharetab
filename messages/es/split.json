@@ -127,6 +127,35 @@
     "finalizeConfirm": "¿Finalizar esta división? Se calcularán los totales por persona y la sesión se bloqueará.",
     "splitFinalized": "¡División finalizada!",
     "groupSize": "Personas en tu grupo",
-    "groupSizeHint": "Ingresa 2+ si te unes como pareja o grupo"
+    "groupSizeHint": "Ingresa 2+ si te unes como pareja o grupo",
+    "groupClaim": {
+      "notInGroupTitle": "You're not in this group",
+      "notInGroupDescription": "Ask the bill creator to add you to {group}, then reopen this link.",
+      "finalizeButton": "Finalize & create expense",
+      "finalizeTitle": "Finalize and create expense in {group}",
+      "allClaimedHint": "Everything's been claimed — confirm to create the expense.",
+      "unclaimedHeader": "Unclaimed items",
+      "unclaimedHowTo": "What should happen to these?",
+      "unclaimedAssignToPayer": "Assign all to the payer ({name})",
+      "unclaimedSplitEqually": "Split equally among everyone",
+      "unclaimedSkip": "Skip — don't include in the expense",
+      "confirm": "Create expense",
+      "cancel": "Cancel",
+      "viewExpense": "View expense"
+    }
+  },
+  "tng": {
+    "label": "TNG eWallet",
+    "copied": "Phone number copied"
+  },
+  "duitNow": {
+    "label": "DuitNow QR",
+    "showQr": "Show DuitNow QR",
+    "dialogTitle": "Scan with any Malaysian banking app"
+  },
+  "payment": {
+    "paidBy": "Paid by <strong>{name}</strong>",
+    "payHeader": "Pay {name}",
+    "paidTag": "Paid"
   }
 }

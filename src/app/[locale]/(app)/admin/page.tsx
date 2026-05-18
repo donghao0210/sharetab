@@ -32,6 +32,7 @@ import { OpenAICodexAuthSection } from "@/components/admin/openai-codex-auth-sec
 import { UserManagementSection } from "@/components/admin/user-management-section";
 import { GroupOverviewSection } from "@/components/admin/group-overview-section";
 import { VenmoSettingsSection } from "@/components/admin/venmo-settings-section";
+import { MalaysianPaymentsSettingsSection } from "@/components/admin/malaysian-payments-settings-section";
 
 export default function AdminPage() {
   const { data: session } = useSession();
@@ -60,6 +61,7 @@ export default function AdminPage() {
         <Separator />
         <AnnouncementSection />
         <VenmoSettingsSection />
+        <MalaysianPaymentsSettingsSection />
         <Separator />
         <AIStatsSection />
         <AIProviderTestSection />

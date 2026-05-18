@@ -127,6 +127,35 @@
     "finalizeConfirm": "이 분할을 확정하시겠습니까? 인당 금액이 계산되고 세션이 잠깁니다.",
     "splitFinalized": "분할이 확정되었습니다!",
     "groupSize": "그룹 인원수",
-    "groupSizeHint": "커플 또는 그룹인 경우 2 이상 입력"
+    "groupSizeHint": "커플 또는 그룹인 경우 2 이상 입력",
+    "groupClaim": {
+      "notInGroupTitle": "You're not in this group",
+      "notInGroupDescription": "Ask the bill creator to add you to {group}, then reopen this link.",
+      "finalizeButton": "Finalize & create expense",
+      "finalizeTitle": "Finalize and create expense in {group}",
+      "allClaimedHint": "Everything's been claimed — confirm to create the expense.",
+      "unclaimedHeader": "Unclaimed items",
+      "unclaimedHowTo": "What should happen to these?",
+      "unclaimedAssignToPayer": "Assign all to the payer ({name})",
+      "unclaimedSplitEqually": "Split equally among everyone",
+      "unclaimedSkip": "Skip — don't include in the expense",
+      "confirm": "Create expense",
+      "cancel": "Cancel",
+      "viewExpense": "View expense"
+    }
+  },
+  "tng": {
+    "label": "TNG eWallet",
+    "copied": "Phone number copied"
+  },
+  "duitNow": {
+    "label": "DuitNow QR",
+    "showQr": "Show DuitNow QR",
+    "dialogTitle": "Scan with any Malaysian banking app"
+  },
+  "payment": {
+    "paidBy": "Paid by <strong>{name}</strong>",
+    "payHeader": "Pay {name}",
+    "paidTag": "Paid"
   }
 }

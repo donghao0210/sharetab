@@ -59,6 +59,8 @@ model User {
   defaultCurrency String    @default("USD")
   locale          String    @default("en")
   venmoUsername   String?
+  tngPhoneNumber  String?
+  duitNowQrPath   String?
   suspendedAt     DateTime?
   isPlaceholder   Boolean   @default(false)
   placeholderName String?
@@ -97,6 +99,7 @@ model Group {
   invites      GroupInvite[]
   activityLogs ActivityLog[]
   receipts     Receipt[]
+  guestSessions GuestSplit[] @relation("GroupGuestSessions")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -167,6 +170,7 @@ model Expense {
   addedBy User          @relation("AddedBy", fields: [addedById], references: [id])
   shares ExpenseShare[]
   receipt Receipt?      @relation(fields: [receiptId], references: [id])
+  fromGuestSplit GuestSplit? @relation("GuestSplitConvertedExpense")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -360,6 +364,8 @@ enum AdminAction {
   MERIDIAN_NOTIFY_PREFERENCE_CHANGED
   AI_PROVIDER_TESTED
   VENMO_SETTING_CHANGED
+  TNG_SETTING_CHANGED
+  DUITNOW_SETTING_CHANGED
 }
 
 model SystemSetting {
@@ -399,15 +405,22 @@ model GuestSplit {
   people      Json     // [{name}]
   assignments Json     // [{itemIndex, personIndices}]
   summary     Json?    // [{name, itemTotal, tax, tip, total}]
-  paidByIndex      Int              @default(0)
-  payerVenmoHandle String?
-  status           GuestSplitStatus @default(FINALIZED)
+  paidByIndex        Int              @default(0)
+  payerVenmoHandle   String?
+  payerTngPhone      String?
+  payerDuitNowQrPath String?
+  status             GuestSplitStatus @default(FINALIZED)
   userId           String?
   createdBy   User?    @relation("GuestSplits", fields: [userId], references: [id], onDelete: SetNull)
+  groupId             String?
+  group               Group?   @relation("GroupGuestSessions", fields: [groupId], references: [id], onDelete: SetNull)
+  convertedExpenseId  String?  @unique
+  convertedExpense    Expense? @relation("GuestSplitConvertedExpense", fields: [convertedExpenseId], references: [id], onDelete: SetNull)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+  @@index([groupId])
   @@index([expiresAt])
 }

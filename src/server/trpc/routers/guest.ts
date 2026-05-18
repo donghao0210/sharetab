@@ -8,31 +8,49 @@ import { logger } from "../../lib/logger";
 import { checkRateLimit } from "../../lib/rate-limit";
 import { parseExtractedData, parseGuestItems, parseGuestPeople, parseGuestAssignments } from "../../lib/json-schemas";
 import { calculateSplitTotals } from "@/lib/split-calculator";
+import { computeUserTotalsFromClaims } from "@/server/lib/expense-from-claims";
 import { normalizeGuestName } from "@/lib/guest-session";
 import {
   getConfiguredProviderPriority,
 } from "@/server/ai/registry";
 
-async function getCreatorPayerVenmoHandle(
+type CreatorPaymentMethods = {
+  venmoHandle: string | null;
+  tngPhone: string | null;
+  duitNowQrPath: string | null;
+};
+
+const NO_PAYMENT_METHODS: CreatorPaymentMethods = {
+  venmoHandle: null,
+  tngPhone: null,
+  duitNowQrPath: null,
+};
+
+async function getCreatorPayerPaymentMethods(
   db: typeof import("@/server/db").db,
   userId: string | undefined | null,
   payerName: string | undefined
-): Promise<string | null> {
-  if (!userId || !payerName) return null;
+): Promise<CreatorPaymentMethods> {
+  if (!userId || !payerName) return NO_PAYMENT_METHODS;
   const creator = await db.user.findUnique({
     where: { id: userId },
-    select: { venmoUsername: true, name: true },
+    select: { name: true, venmoUsername: true, tngPhoneNumber: true, duitNowQrPath: true },
   });
-  if (creator?.venmoUsername && creator.name && normalizeGuestName(creator.name) === normalizeGuestName(payerName)) {
-    return creator.venmoUsername;
+  if (!creator?.name || normalizeGuestName(creator.name) !== normalizeGuestName(payerName)) {
+    return NO_PAYMENT_METHODS;
   }
-  return null;
+  return {
+    venmoHandle: creator.venmoUsername ?? null,
+    tngPhone: creator.tngPhoneNumber ?? null,
+    duitNowQrPath: creator.duitNowQrPath ?? null,
+  };
 }
 
 type GuestSessionPerson = {
   name: string;
   personToken?: string;
   groupSize?: number; // defaults to 1, > 1 means this person represents a group
+  userId?: string;    // set when this person corresponds to a real User (group-claim sessions)
 };
 
 const GUEST_TRANSACTION_RETRY_ATTEMPTS = 3;
@@ -404,7 +422,7 @@ export const guestRouter = createTRPCRouter({
         name: filteredPeople[s.personIndex]?.name ?? `Person ${s.personIndex + 1}`,
       }));
 
-      const payerVenmoHandle = await getCreatorPayerVenmoHandle(
+      const payerMethods = await getCreatorPayerPaymentMethods(
         ctx.db, ctx.session?.user?.id, filteredPeople[remappedPaidBy]?.name
       );
 
@@ -421,7 +439,9 @@ export const guestRouter = createTRPCRouter({
           assignments: remappedAssignments as unknown as Prisma.InputJsonValue,
           summary: summaryWithNames as unknown as Prisma.InputJsonValue,
           paidByIndex: remappedPaidBy,
-          payerVenmoHandle,
+          payerVenmoHandle: payerMethods.venmoHandle,
+          payerTngPhone: payerMethods.tngPhone,
+          payerDuitNowQrPath: payerMethods.duitNowQrPath,
           userId: ctx.session?.user?.id ?? null,
           expiresAt: createExpiryDate(),
         },
@@ -476,6 +496,8 @@ export const guestRouter = createTRPCRouter({
         summary: split.summary as { personIndex: number; name: string; itemTotal: number; tax: number; tip: number; total: number }[],
         paidByIndex: split.paidByIndex,
         payerVenmoHandle: split.payerVenmoHandle,
+        payerTngPhone: split.payerTngPhone,
+        payerDuitNowQrPath: split.payerDuitNowQrPath,
         isCreator: !!split.userId && split.userId === ctx.session?.user?.id,
         isPayer: (() => {
           if (!ctx.session?.user?.name) return false;
@@ -497,6 +519,7 @@ export const guestRouter = createTRPCRouter({
       items: z.array(itemSchema).min(1).max(100),
       creatorName: z.string().trim().min(1).max(100),
       paidByName: z.string().trim().min(1).max(100),
+      groupId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const ip = ctx.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -508,15 +531,56 @@ export const guestRouter = createTRPCRouter({
         throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many sessions created. Please try again later." });
       }
 
-      const creatorName = input.creatorName.trim();
-      const paidByName = input.paidByName.trim();
+      // Group-claim path: require auth + membership; pre-populate people from group members.
+      let groupContext: { groupId: string; currency: string } | null = null;
+      let people: GuestSessionPerson[];
+      let paidByIndex: number;
+      let resolvedReceiptData = input.receiptData;
 
-      // Tokens are assigned lazily when participants, including creator/paidBy, first join this session.
-      const people: GuestSessionPerson[] = [{ name: creatorName }];
-      let paidByIndex = 0;
-      if (normalizeGuestName(paidByName) !== normalizeGuestName(creatorName)) {
-        people.push({ name: paidByName });
-        paidByIndex = 1;
+      if (input.groupId) {
+        if (!ctx.session?.user?.id) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to create a group claim session." });
+        }
+        const userId = ctx.session.user.id;
+        const membership = await ctx.db.groupMember.findUnique({
+          where: { userId_groupId: { userId, groupId: input.groupId } },
+        });
+        if (!membership) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "You are not a member of this group." });
+        }
+        const group = await ctx.db.group.findUnique({
+          where: { id: input.groupId },
+          select: { id: true, currency: true, archivedAt: true },
+        });
+        if (!group) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Group not found." });
+        }
+        if (group.archivedAt) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot start a claim session in an archived group." });
+        }
+        const members = await ctx.db.groupMember.findMany({
+          where: { groupId: input.groupId },
+          include: { user: { select: { id: true, name: true, placeholderName: true, email: true } } },
+          orderBy: { joinedAt: "asc" },
+        });
+        people = members.map((m) => ({
+          name: m.user.placeholderName ?? m.user.name ?? m.user.email,
+          userId: m.user.id,
+        }));
+        paidByIndex = people.findIndex((p) => p.userId === userId);
+        if (paidByIndex < 0) paidByIndex = 0;
+        groupContext = { groupId: group.id, currency: group.currency };
+        // Force the eventual expense to use the group's currency.
+        resolvedReceiptData = { ...input.receiptData, currency: group.currency };
+      } else {
+        const creatorName = input.creatorName.trim();
+        const paidByName = input.paidByName.trim();
+        people = [{ name: creatorName, ...(ctx.session?.user?.id ? { userId: ctx.session.user.id } : {}) }];
+        paidByIndex = 0;
+        if (normalizeGuestName(paidByName) !== normalizeGuestName(creatorName)) {
+          people.push({ name: paidByName });
+          paidByIndex = 1;
+        }
       }
 
       // Auto-split multi-quantity items into individual rows for easier claiming
@@ -547,21 +611,24 @@ export const guestRouter = createTRPCRouter({
         }
       }
 
-      const claimPayerVenmoHandle = await getCreatorPayerVenmoHandle(
+      const claimPayerMethods = await getCreatorPayerPaymentMethods(
         ctx.db, ctx.session?.user?.id, people[paidByIndex]?.name
       );
 
       const session = await ctx.db.guestSplit.create({
         data: {
           receiptId: input.receiptId,
-          receiptData: input.receiptData as unknown as Prisma.InputJsonValue,
+          receiptData: resolvedReceiptData as unknown as Prisma.InputJsonValue,
           items: expandedItems as unknown as Prisma.InputJsonValue,
           people: people as unknown as Prisma.InputJsonValue,
           assignments: [] as unknown as Prisma.InputJsonValue,
           paidByIndex,
-          payerVenmoHandle: claimPayerVenmoHandle,
+          payerVenmoHandle: claimPayerMethods.venmoHandle,
+          payerTngPhone: claimPayerMethods.tngPhone,
+          payerDuitNowQrPath: claimPayerMethods.duitNowQrPath,
           status: GuestSplitStatus.CLAIMING,
           userId: ctx.session?.user?.id ?? null,
+          groupId: groupContext?.groupId ?? null,
           expiresAt: createExpiryDate(),
         },
       });
@@ -592,6 +659,49 @@ export const guestRouter = createTRPCRouter({
           if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
           if (session.expiresAt < new Date()) throw new TRPCError({ code: "NOT_FOUND", message: "Session expired" });
           if (session.status !== GuestSplitStatus.CLAIMING) throw new TRPCError({ code: "BAD_REQUEST", message: "Session is no longer accepting claims" });
+
+          // Group-claim sessions: members-only, identify by userId, not by typed name.
+          if (session.groupId) {
+            if (!ctx.session?.user?.id) {
+              throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to join this group claim session." });
+            }
+            const userId = ctx.session.user.id;
+            const membership = await tx.groupMember.findUnique({
+              where: { userId_groupId: { userId, groupId: session.groupId } },
+            });
+            if (!membership) {
+              throw new TRPCError({ code: "FORBIDDEN", message: "You are not a member of this group." });
+            }
+
+            const people = [...(session.people as GuestSessionPerson[])];
+            const existingIndex = people.findIndex((p) => p.userId === userId);
+
+            if (existingIndex < 0) {
+              // Edge case: member was added to the group after the session was created.
+              if (people.length >= 100) {
+                throw new TRPCError({ code: "BAD_REQUEST", message: "Maximum 100 people per session" });
+              }
+              const personToken = randomUUID();
+              people.push({ name: input.name.trim(), userId, personToken });
+              await tx.guestSplit.update({
+                where: { id: session.id },
+                data: { people: people as unknown as Prisma.InputJsonValue },
+              });
+              return { personIndex: people.length - 1, personToken };
+            }
+
+            const existingPerson = people[existingIndex]!;
+            if (!existingPerson.personToken) {
+              const personToken = randomUUID();
+              people[existingIndex] = { ...existingPerson, personToken };
+              await tx.guestSplit.update({
+                where: { id: session.id },
+                data: { people: people as unknown as Prisma.InputJsonValue },
+              });
+              return { personIndex: existingIndex, personToken };
+            }
+            return { personIndex: existingIndex, personToken: existingPerson.personToken };
+          }
 
           const people = [...(session.people as GuestSessionPerson[])];
           const normalizedName = normalizeGuestName(input.name);
@@ -1056,6 +1166,25 @@ export const guestRouter = createTRPCRouter({
         receiptImagePath = receipt?.imagePath ?? null;
       }
 
+      let groupInfo: { id: string; name: string; currency: string } | null = null;
+      let isGroupMember = false;
+      if (session.groupId) {
+        const group = await ctx.db.group.findUnique({
+          where: { id: session.groupId },
+          select: { id: true, name: true, currency: true },
+        });
+        if (group) groupInfo = group;
+        if (ctx.session?.user?.id) {
+          const m = await ctx.db.groupMember.findUnique({
+            where: { userId_groupId: { userId: ctx.session.user.id, groupId: session.groupId } },
+            select: { id: true },
+          });
+          isGroupMember = !!m;
+        }
+      }
+
+      const people = session.people as GuestSessionPerson[];
+
       return {
         id: session.id,
         shareToken: session.shareToken,
@@ -1070,12 +1199,28 @@ export const guestRouter = createTRPCRouter({
           currency: string;
         },
         items: session.items as { name: string; originalName?: string | null; quantity: number; unitPrice: number; totalPrice: number }[],
-        people: toPublicPeople(session.people as GuestSessionPerson[]),
+        people: toPublicPeople(people),
         assignments: session.assignments as { itemIndex: number; personIndices: number[] }[],
         summary: session.summary as { personIndex: number; name: string; itemTotal: number; tax: number; tip: number; total: number }[] | null,
         paidByIndex: session.paidByIndex,
         payerVenmoHandle: session.payerVenmoHandle,
+        payerTngPhone: session.payerTngPhone,
+        payerDuitNowQrPath: session.payerDuitNowQrPath,
         isCreator: !!session.userId && session.userId === ctx.session?.user?.id,
+        isPayer: (() => {
+          if (!ctx.session?.user?.id) return false;
+          // Group sessions: identity is userId-based, not name-based.
+          if (session.groupId) {
+            return people[session.paidByIndex]?.userId === ctx.session.user.id;
+          }
+          if (!ctx.session.user.name) return false;
+          const payerName = people[session.paidByIndex]?.name;
+          return !!payerName && normalizeGuestName(ctx.session.user.name) === normalizeGuestName(payerName);
+        })(),
+        groupId: session.groupId,
+        group: groupInfo,
+        isGroupMember,
+        convertedExpenseId: session.convertedExpenseId,
         receiptImagePath,
         createdAt: session.createdAt,
         expiresAt: session.expiresAt,
@@ -1156,6 +1301,207 @@ export const guestRouter = createTRPCRouter({
           });
 
           return { shareToken: session.shareToken };
+        }, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        })
+      );
+    }),
+
+  finalizeAndCreateExpense: protectedProcedure
+    .input(z.object({
+      token: z.string(),
+      unclaimedPolicy: z.enum(["assignToPayer", "splitEqually", "skip"]),
+      tipOverride: z.number().int().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return withSerializableRetry(() =>
+        ctx.db.$transaction(async (tx) => {
+          const session = await tx.guestSplit.findUnique({
+            where: { shareToken: input.token },
+          });
+          if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+          if (session.expiresAt < new Date()) throw new TRPCError({ code: "NOT_FOUND", message: "Session expired" });
+          if (session.status !== GuestSplitStatus.CLAIMING) throw new TRPCError({ code: "BAD_REQUEST", message: "Session is already finalized" });
+          if (!session.groupId) throw new TRPCError({ code: "BAD_REQUEST", message: "This session is not linked to a group" });
+          if (session.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the session creator can finalize" });
+
+          const group = await tx.group.findUnique({
+            where: { id: session.groupId },
+            select: { id: true, currency: true, archivedAt: true },
+          });
+          if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+          if (group.archivedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot finalize into an archived group" });
+
+          const items = parseGuestItems(session.items);
+          const people = session.people as GuestSessionPerson[];
+          const assignments = parseGuestAssignments(session.assignments);
+          const receiptData = parseExtractedData(session.receiptData);
+          const tip = input.tipOverride ?? receiptData.tip;
+
+          // Resolve every person → userId (creating placeholder users for name-only extras).
+          const personUserIds: string[] = [];
+          for (let i = 0; i < people.length; i++) {
+            const p = people[i]!;
+            if (p.userId) {
+              personUserIds.push(p.userId);
+              continue;
+            }
+            const { randomUUID } = await import("crypto");
+            const placeholderEmail = `placeholder-${randomUUID()}@placeholder.local`;
+            const placeholderUser = await tx.user.create({
+              data: {
+                email: placeholderEmail,
+                name: p.name,
+                isPlaceholder: true,
+                placeholderName: p.name,
+                createdByUserId: ctx.user.id,
+              },
+            });
+            await tx.groupMember.create({
+              data: { userId: placeholderUser.id, groupId: group.id },
+            });
+            await tx.activityLog.create({
+              data: {
+                groupId: group.id,
+                userId: ctx.user.id,
+                type: "PLACEHOLDER_CREATED",
+                metadata: { placeholderName: p.name, placeholderUserId: placeholderUser.id },
+              },
+            });
+            personUserIds.push(placeholderUser.id);
+            p.userId = placeholderUser.id; // also mutate so the people JSON persists this assignment below
+          }
+
+          // Apply the unclaimed-items policy.
+          const assignedItemIndices = new Set(assignments.map((a) => a.itemIndex));
+          const unclaimedIndices: number[] = [];
+          for (let i = 0; i < items.length; i++) {
+            if (!assignedItemIndices.has(i)) unclaimedIndices.push(i);
+          }
+
+          const effectiveAssignments = assignments.map((a) => ({ ...a, personIndices: [...a.personIndices] }));
+          const skippedItemIndices = new Set<number>();
+          if (input.unclaimedPolicy === "assignToPayer") {
+            for (const idx of unclaimedIndices) {
+              effectiveAssignments.push({ itemIndex: idx, personIndices: [session.paidByIndex] });
+            }
+          } else if (input.unclaimedPolicy === "splitEqually") {
+            const everyone = people.map((_, i) => i);
+            for (const idx of unclaimedIndices) {
+              effectiveAssignments.push({ itemIndex: idx, personIndices: everyone });
+            }
+          } else {
+            // "skip": exclude unclaimed items from totals & expense
+            for (const idx of unclaimedIndices) skippedItemIndices.add(idx);
+          }
+
+          // Build the inputs for the shared math helper.
+          const splitItems = items
+            .map((item, idx) => ({ id: String(idx), totalPrice: item.totalPrice }))
+            .filter((_, idx) => !skippedItemIndices.has(idx));
+          const splitAssignments = effectiveAssignments
+            .filter((a) => !skippedItemIndices.has(a.itemIndex))
+            .map((a) => ({
+              itemId: String(a.itemIndex),
+              userIds: a.personIndices.map((pi) => personUserIds[pi]!),
+            }));
+
+          // Recompute receipt subtotal excluding skipped items (so tax/tip proportions add up).
+          const adjustedReceiptSubtotal = splitItems.reduce((s, it) => s + it.totalPrice, 0);
+
+          const { userTotals, totalAmount, actualSubtotal } = computeUserTotalsFromClaims({
+            items: splitItems,
+            assignments: splitAssignments,
+            tax: receiptData.tax,
+            tip,
+            receiptSubtotal: adjustedReceiptSubtotal,
+          });
+
+          if (userTotals.size === 0) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "No items are claimed; nothing to charge." });
+          }
+
+          const merchant = receiptData.merchantName?.trim();
+          const expenseTitle = merchant && merchant.length > 0 ? merchant : "Receipt split";
+          const expenseDate = receiptData.date ? new Date(receiptData.date) : new Date();
+          const validExpenseDate = isNaN(expenseDate.getTime()) ? new Date() : expenseDate;
+
+          const expense = await tx.expense.create({
+            data: {
+              groupId: group.id,
+              title: expenseTitle,
+              amount: totalAmount,
+              subtotal: actualSubtotal,
+              tax: receiptData.tax,
+              serviceCharge: tip,
+              currency: group.currency,
+              splitMode: "EXACT",
+              paidById: ctx.user.id,
+              addedById: ctx.user.id,
+              expenseDate: validExpenseDate,
+              receiptId: session.receiptId ?? undefined,
+              shares: {
+                create: Array.from(userTotals.entries()).map(([userId, amount]) => ({ userId, amount })),
+              },
+            },
+          });
+
+          // Build a per-person summary mirroring the standalone-split shape so the read API
+          // continues to work for archival viewing of the finalized session.
+          const summaryWithNames = people.map((p, idx) => {
+            const userId = personUserIds[idx]!;
+            const total = userTotals.get(userId) ?? 0;
+            return {
+              personIndex: idx,
+              name: p.name,
+              itemTotal: 0, // detailed breakdown intentionally omitted in the group flow
+              tax: 0,
+              tip: 0,
+              total,
+            };
+          });
+
+          await tx.guestSplit.update({
+            where: { id: session.id },
+            data: {
+              status: GuestSplitStatus.FINALIZED,
+              assignments: effectiveAssignments as unknown as Prisma.InputJsonValue,
+              people: people as unknown as Prisma.InputJsonValue,
+              summary: summaryWithNames as unknown as Prisma.InputJsonValue,
+              convertedExpenseId: expense.id,
+              receiptData: {
+                ...receiptData,
+                tip,
+                total: actualSubtotal + receiptData.tax + tip,
+                currency: group.currency,
+              } as unknown as Prisma.InputJsonValue,
+            },
+          });
+
+          await tx.activityLog.create({
+            data: {
+              groupId: group.id,
+              userId: ctx.user.id,
+              type: "EXPENSE_CREATED",
+              entityId: expense.id,
+              metadata: {
+                title: expenseTitle,
+                amount: totalAmount,
+                fromGuestSession: true,
+                shareToken: session.shareToken,
+              },
+            },
+          });
+
+          logger.info("guest.session.finalizedAsExpense", {
+            sessionId: session.id,
+            expenseId: expense.id,
+            groupId: group.id,
+            shareCount: userTotals.size,
+            totalAmount,
+          });
+
+          return { expenseId: expense.id, groupId: group.id };
         }, {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         })

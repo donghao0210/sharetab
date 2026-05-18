@@ -30,6 +30,25 @@ export async function GET(
     return new Response("Forbidden", { status: 403 });
   }
 
+  // DuitNow QR images are public — they're meant to be scanned by anyone with the split link.
+  // Directory-traversal protection above already prevents path escape.
+  if (filePath.startsWith("qr/")) {
+    try {
+      await stat(fullPath);
+      const buffer = await readFile(fullPath);
+      const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+      const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+      return new Response(buffer, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  }
+
   // Verify receipt ownership
   const receipt = await db.receipt.findFirst({
     where: { imagePath: filePath },

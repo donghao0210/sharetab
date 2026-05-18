@@ -73,3 +73,6 @@ next-env.d.ts
 *.code-workspace
 eng.traineddata
 docs/superpowers/
+
+# local scratch / mockups (untracked)
+/scratch/

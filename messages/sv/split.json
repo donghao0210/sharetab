@@ -127,6 +127,35 @@
     "finalizeConfirm": "Slutför denna delning? Totaler per person beräknas och sessionen låses.",
     "splitFinalized": "Delning slutförd!",
     "groupSize": "Antal i din grupp",
-    "groupSizeHint": "Ange 2+ om ni går med som par eller grupp"
+    "groupSizeHint": "Ange 2+ om ni går med som par eller grupp",
+    "groupClaim": {
+      "notInGroupTitle": "You're not in this group",
+      "notInGroupDescription": "Ask the bill creator to add you to {group}, then reopen this link.",
+      "finalizeButton": "Finalize & create expense",
+      "finalizeTitle": "Finalize and create expense in {group}",
+      "allClaimedHint": "Everything's been claimed — confirm to create the expense.",
+      "unclaimedHeader": "Unclaimed items",
+      "unclaimedHowTo": "What should happen to these?",
+      "unclaimedAssignToPayer": "Assign all to the payer ({name})",
+      "unclaimedSplitEqually": "Split equally among everyone",
+      "unclaimedSkip": "Skip — don't include in the expense",
+      "confirm": "Create expense",
+      "cancel": "Cancel",
+      "viewExpense": "View expense"
+    }
+  },
+  "tng": {
+    "label": "TNG eWallet",
+    "copied": "Phone number copied"
+  },
+  "duitNow": {
+    "label": "DuitNow QR",
+    "showQr": "Show DuitNow QR",
+    "dialogTitle": "Scan with any Malaysian banking app"
+  },
+  "payment": {
+    "paidBy": "Paid by <strong>{name}</strong>",
+    "payHeader": "Pay {name}",
+    "paidTag": "Paid"
   }
 }

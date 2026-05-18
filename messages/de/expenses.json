@@ -72,7 +72,8 @@
     "loadingGroup": "Gruppe wird geladen...",
     "groupLoadError": "Gruppendaten konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
     "uploadFailed": "Upload fehlgeschlagen",
-    "createSessionFailed": "Sitzung konnte nicht erstellt werden."
+    "createSessionFailed": "Sitzung konnte nicht erstellt werden.",
+    "shareForClaimingCaption": "Members open the link and claim items. Becomes a group expense when you finalize."
   },
   "receipt": {
     "hideImage": "Belegbild ausblenden",

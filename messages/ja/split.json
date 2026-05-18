@@ -127,6 +127,35 @@
     "finalizeConfirm": "この分割を確定しますか？一人当たりの金額が計算され、セッションがロックされます。",
     "splitFinalized": "分割が確定されました！",
     "groupSize": "グループの人数",
-    "groupSizeHint": "カップルやグループの場合は2以上を入力"
+    "groupSizeHint": "カップルやグループの場合は2以上を入力",
+    "groupClaim": {
+      "notInGroupTitle": "You're not in this group",
+      "notInGroupDescription": "Ask the bill creator to add you to {group}, then reopen this link.",
+      "finalizeButton": "Finalize & create expense",
+      "finalizeTitle": "Finalize and create expense in {group}",
+      "allClaimedHint": "Everything's been claimed — confirm to create the expense.",
+      "unclaimedHeader": "Unclaimed items",
+      "unclaimedHowTo": "What should happen to these?",
+      "unclaimedAssignToPayer": "Assign all to the payer ({name})",
+      "unclaimedSplitEqually": "Split equally among everyone",
+      "unclaimedSkip": "Skip — don't include in the expense",
+      "confirm": "Create expense",
+      "cancel": "Cancel",
+      "viewExpense": "View expense"
+    }
+  },
+  "tng": {
+    "label": "TNG eWallet",
+    "copied": "Phone number copied"
+  },
+  "duitNow": {
+    "label": "DuitNow QR",
+    "showQr": "Show DuitNow QR",
+    "dialogTitle": "Scan with any Malaysian banking app"
+  },
+  "payment": {
+    "paidBy": "Paid by <strong>{name}</strong>",
+    "payHeader": "Pay {name}",
+    "paidTag": "Paid"
   }
 }

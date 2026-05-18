@@ -68,6 +68,7 @@
     "fallbackChain": "Fallback chain:",
     "or": "or",
     "shareForClaiming": "Share Link — Let Members Claim Items",
+    "shareForClaimingCaption": "Members open the link and claim items. Becomes a group expense when you finalize.",
     "creatingSession": "Creating session...",
     "loadingGroup": "Loading group...",
     "groupLoadError": "Could not load group data. Please try again.",

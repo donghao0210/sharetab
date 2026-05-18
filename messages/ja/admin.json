@@ -282,5 +282,17 @@
     "step1Label": "ステップ1:",
     "step2Label": "ステップ2:",
     "step2Hint": "OpenAIのフローはlocalhost:1455にリダイレクトします。このコールバックはブラウザでは失敗することが想定されているため、アドレスバーからリダイレクト先の完全なURLをコピーしてください。"
+  },
+  "malaysianPayments": {
+    "title": "Malaysian Payment Methods",
+    "description": "When enabled, split results in MYR show the payer's TNG eWallet phone number and DuitNow QR for easy in-app payments.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "tngLabel": "Touch 'n Go eWallet",
+    "tngEnabledStatus": "TNG phone numbers are visible on MYR splits",
+    "tngDisabledStatus": "TNG phone numbers are hidden",
+    "duitNowLabel": "DuitNow QR",
+    "duitNowEnabledStatus": "DuitNow QR codes are visible on MYR splits",
+    "duitNowDisabledStatus": "DuitNow QR codes are hidden"
   }
 }

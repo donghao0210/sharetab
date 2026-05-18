@@ -72,7 +72,8 @@
     "loadingGroup": "Chargement du groupe...",
     "groupLoadError": "Impossible de charger les données du groupe. Veuillez réessayer.",
     "uploadFailed": "Échec du téléchargement",
-    "createSessionFailed": "Échec de la création de la session."
+    "createSessionFailed": "Échec de la création de la session.",
+    "shareForClaimingCaption": "Members open the link and claim items. Becomes a group expense when you finalize."
   },
   "receipt": {
     "hideImage": "Masquer l'image du reçu",
