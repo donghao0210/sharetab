@@ -190,9 +190,16 @@ export default function SharedSplitPage({
                 {/* Item details */}
                 <div className="space-y-1 text-sm text-muted-foreground">
                   {personItems.map((item, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span>{item.name}</span>
-                      <span>{formatCents(item.totalPrice, currency, locale)}</span>
+                    <div key={i} className="flex justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate">
+                        {item.name}
+                        {item.originalName && item.originalName !== item.name && (
+                          <span className="ml-1 text-muted-foreground/80" title={item.originalName}>
+                            ({item.originalName})
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0">{formatCents(item.totalPrice, currency, locale)}</span>
                     </div>
                   ))}
                   {person.tax > 0 && (

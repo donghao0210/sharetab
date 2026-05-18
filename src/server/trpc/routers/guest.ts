@@ -89,6 +89,7 @@ const receiptDataSchema = z.object({
 
 const itemSchema = z.object({
   name: z.string(),
+  originalName: z.string().nullable().optional(),
   quantity: z.number().int().min(1),
   unitPrice: z.number().int(),
   totalPrice: z.number().int(),
@@ -469,7 +470,7 @@ export const guestRouter = createTRPCRouter({
           total: number;
           currency: string;
         },
-        items: split.items as { name: string; quantity: number; unitPrice: number; totalPrice: number }[],
+        items: split.items as { name: string; originalName?: string | null; quantity: number; unitPrice: number; totalPrice: number }[],
         people: toPublicPeople(split.people as GuestSessionPerson[]),
         assignments: split.assignments as { itemIndex: number; personIndices: number[] }[],
         summary: split.summary as { personIndex: number; name: string; itemTotal: number; tax: number; tip: number; total: number }[],
@@ -537,6 +538,7 @@ export const guestRouter = createTRPCRouter({
             const price = base + (i < remainder ? 1 : 0);
             expandedItems.push({
               name: item.name,
+              originalName: item.originalName ?? null,
               quantity: 1,
               unitPrice: price,
               totalPrice: price,
@@ -771,7 +773,7 @@ export const guestRouter = createTRPCRouter({
           const isParticipant = people.some(p => p.personToken === input.personToken);
           if (!isParticipant) throw new TRPCError({ code: "FORBIDDEN", message: "Not a participant" });
 
-          const items = [...(session.items as { name: string; quantity: number; unitPrice: number; totalPrice: number }[])];
+          const items = [...(session.items as { name: string; originalName?: string | null; quantity: number; unitPrice: number; totalPrice: number }[])];
           if (input.itemIndex >= items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid item index" });
 
           const item = items[input.itemIndex]!;
@@ -789,6 +791,7 @@ export const guestRouter = createTRPCRouter({
           items[input.itemIndex] = { ...item, quantity: remainingQty, totalPrice: remainingTotalPrice };
           items.splice(input.itemIndex + 1, 0, {
             name: item.name,
+            originalName: item.originalName ?? null,
             quantity: input.splitQuantity,
             unitPrice: item.unitPrice,
             totalPrice: newTotalPrice,
@@ -959,7 +962,7 @@ export const guestRouter = createTRPCRouter({
           total: number;
           currency: string;
         },
-        items: session.items as { name: string; quantity: number; unitPrice: number; totalPrice: number }[],
+        items: session.items as { name: string; originalName?: string | null; quantity: number; unitPrice: number; totalPrice: number }[],
         people: toPublicPeople(session.people as GuestSessionPerson[]),
         assignments: session.assignments as { itemIndex: number; personIndices: number[] }[],
         summary: session.summary as { personIndex: number; name: string; itemTotal: number; tax: number; tip: number; total: number }[] | null,
