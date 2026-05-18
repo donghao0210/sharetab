@@ -21,6 +21,7 @@ export type ExtractedData = z.infer<typeof extractedDataSchema>;
 
 export const guestItemSchema = z.object({
   name: z.string(),
+  originalName: z.string().nullable().optional(),
   quantity: z.number().int().min(1),
   unitPrice: z.number().int().min(0),
   totalPrice: z.number().int().min(0),

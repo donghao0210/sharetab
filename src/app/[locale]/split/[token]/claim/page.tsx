@@ -1049,18 +1049,28 @@ export default function ClaimPage({
                     {/* Item details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={`font-medium truncate ${
-                            isClaimed ? "text-foreground" : "text-muted-foreground"
-                          }`}
-                        >
-                          {item.name}
-                          {item.quantity > 1 && (
-                            <span className="text-muted-foreground ml-1">
-                              x{item.quantity}
+                        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                          <span
+                            className={`font-medium truncate ${
+                              isClaimed ? "text-foreground" : "text-muted-foreground"
+                            }`}
+                          >
+                            {item.name}
+                            {item.quantity > 1 && (
+                              <span className="text-muted-foreground ml-1">
+                                x{item.quantity}
+                              </span>
+                            )}
+                          </span>
+                          {item.originalName && item.originalName !== item.name && (
+                            <span
+                              className="text-xs text-muted-foreground truncate"
+                              title={item.originalName}
+                            >
+                              {item.originalName}
                             </span>
                           )}
-                        </span>
+                        </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {item.quantity > 1 && (
                             <button
