@@ -129,6 +129,7 @@ export const receiptsRouter = createTRPCRouter({
       type ReceiptItem = {
         id: string;
         name: string;
+        originalName?: string | null;
         quantity: number;
         unitPrice: number;
         totalPrice: number;
@@ -152,6 +153,7 @@ export const receiptsRouter = createTRPCRouter({
             tip: number;
             serviceCharge?: number;
             discount?: number;
+            rounding?: number;
             taxPct?: number | null;
             servicePct?: number | null;
             pricesIncludeTax?: boolean;
@@ -168,6 +170,7 @@ export const receiptsRouter = createTRPCRouter({
       z.object({
         itemId: z.string(),
         name: z.string().min(1).max(200).optional(),
+        originalName: z.string().max(400).nullable().optional(),
         quantity: z.number().int().min(1).optional(),
         unitPrice: z.number().int().min(0).optional(),
         totalPrice: z.number().int().min(0).optional(),
@@ -192,6 +195,7 @@ export const receiptsRouter = createTRPCRouter({
       z.object({
         receiptId: z.string(),
         name: z.string().min(1).max(200),
+        originalName: z.string().max(400).nullable().optional(),
         quantity: z.number().int().min(1).default(1),
         unitPrice: z.number().int().min(0),
         totalPrice: z.number().int().min(0),
@@ -209,6 +213,7 @@ export const receiptsRouter = createTRPCRouter({
         data: {
           receiptId: input.receiptId,
           name: input.name,
+          originalName: input.originalName ?? null,
           quantity: input.quantity,
           unitPrice: input.unitPrice,
           totalPrice: input.totalPrice,
@@ -305,6 +310,7 @@ export const receiptsRouter = createTRPCRouter({
           data: {
             receiptId: current.receiptId,
             name: current.name,
+            originalName: current.originalName,
             quantity: input.splitQuantity,
             unitPrice: current.unitPrice,
             totalPrice: newTotalPrice,

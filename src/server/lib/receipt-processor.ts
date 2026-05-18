@@ -95,6 +95,7 @@ export async function processReceiptImage({
     data: result.items.map((item, i) => ({
       receiptId,
       name: item.name,
+      originalName: item.originalName ?? null,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
@@ -118,6 +119,7 @@ export async function processReceiptImage({
         tip: result.tip,
         serviceCharge: result.serviceCharge,
         discount: result.discount,
+        rounding: result.rounding,
         taxPct: result.taxPct ?? null,
         servicePct: result.servicePct ?? null,
         pricesIncludeTax: result.pricesIncludeTax,
@@ -136,6 +138,7 @@ export async function processReceiptImage({
     tip: result.tip,
     serviceCharge: result.serviceCharge,
     discount: result.discount,
+    rounding: result.rounding,
     taxPct: result.taxPct ?? null,
     servicePct: result.servicePct ?? null,
     pricesIncludeTax: result.pricesIncludeTax,

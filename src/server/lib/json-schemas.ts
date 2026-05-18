@@ -9,6 +9,7 @@ export const extractedDataSchema = z.object({
   tip: z.number().int().min(0).default(0),
   serviceCharge: z.number().int().min(0).default(0),
   discount: z.number().int().min(0).default(0),
+  rounding: z.number().int().default(0),
   taxPct: z.number().min(0).max(100).nullable().optional(),
   servicePct: z.number().min(0).max(100).nullable().optional(),
   pricesIncludeTax: z.boolean().default(false),
