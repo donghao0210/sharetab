@@ -99,7 +99,7 @@ ShareTab is a free, self-hosted alternative to Splitwise for tracking shared exp
 - **Group expense tracking** with multiple split modes (equal, percentage, shares, exact, item-level)
 - **AI receipt scanning** -- photograph a receipt, AI extracts line items, assign items to group members with proportional tax/tip; zoomable/pannable receipt viewer; rescan with correction prompts
 - **Guest bill splitting** -- no account needed, shareable summary links
-- **Pluggable AI providers** -- OpenAI (GPT-4o), OpenAI-Codex (ChatGPT OAuth), Claude (API key), Meridian (Claude Max subscription), local Ollama, or OCR fallback (no API key needed)
+- **Pluggable AI providers** -- OpenAI (GPT-4o), OpenAI-Codex (ChatGPT OAuth), Claude (API key), Meridian (Claude Max subscription), local Ollama
 - **Group archiving** -- archive inactive groups to declutter your dashboard; toggle archived view on groups page
 - **Cross-group dashboard** -- see all your balances at a glance, with per-person debt breakdown
 - **Debt simplification** -- minimize the number of payments needed
@@ -166,6 +166,29 @@ You can also skip the manual copy and paste the raw template URL into Unraid's t
 docker compose exec sharetab su-exec postgres pg_dump -U sharetab sharetab > backup.sql
 ```
 
+## Upgrading
+
+When upgrading to a new ShareTab version, pull the latest image and recreate the container:
+
+```bash
+cd docker
+docker compose pull
+docker compose up -d
+```
+
+The entrypoint automatically runs any SQL migration files in `prisma/migrations/` before applying the Prisma schema. Most upgrades are fully automatic.
+
+### Manual migration (v0.7.x → v0.8.0)
+
+Version 0.8.0 added an `updatedAt` column and converted the `status` column from text to an enum on the `GuestSplit` table. This migration now runs automatically on container startup. If you need to run it manually:
+
+```bash
+docker compose exec sharetab su-exec postgres psql -U sharetab -d sharetab \
+  -f /app/prisma/migrations/guest_split_status_enum.sql
+```
+
+This is idempotent — safe to run more than once.
+
 ## Configuration
 
 All configuration is done through environment variables. Copy `.env.example` to `.env` and adjust as needed.
@@ -181,7 +204,7 @@ All configuration is done through environment variables. Copy `.env.example` to 
 
 | Variable | Description |
 |---|---|
-| `AI_PROVIDER_PRIORITY` | Comma-separated provider priority list (for example `openai-codex,meridian,openai,ocr`). ShareTab checks providers in order, uses the first available one, and falls through to the next provider if extraction fails. If `ocr` is omitted, ShareTab appends OCR as the final fallback. |
+| `AI_PROVIDER_PRIORITY` | Comma-separated provider priority list (for example `openai-codex,meridian,openai`). ShareTab checks providers in order, uses the first available one, and falls through to the next provider if extraction fails. |
 | `OPENAI_API_KEY` | Required when `openai` is included in `AI_PROVIDER_PRIORITY`. |
 | `OPENAI_MODEL` | OpenAI model for receipt scanning. Defaults to `gpt-4o`. |
 | `OPENAI_CODEX_MODEL` | Model for ChatGPT OAuth / Codex backend receipt scanning. Defaults to `gpt-5.4`. |
@@ -214,7 +237,7 @@ After the container is running, open the ShareTab admin dashboard and complete t
 
 The bundled Docker Compose setup persists `/app/claude` automatically. If you use your own Docker or Unraid template, mount a persistent path to `/app/claude`.
 
-The `ocr` provider uses Tesseract.js for local text extraction -- no API key or external service needed. It's less accurate than AI providers but works as a free fallback. In priority mode, OCR can be listed explicitly, and is also appended automatically as a final fallback if omitted.
+**⚠️ OCR provider (removed):** The `ocr` provider (Tesseract.js) was originally included as a free fallback for users without AI API access, but after extensive testing across hundreds of real-world receipts, the accuracy was too unreliable for production use. Common failures included extracting modifiers as line items, failing to exclude delivery fees, and poor handling of non-standard receipt layouts. The OCR provider has been removed from the codebase. Existing configs that include `ocr` in `AI_PROVIDER_PRIORITY` will silently ignore it. If you need reliable receipt scanning, configure one of the AI providers above (openai-codex or meridian are recommended). Community contributions to reintroduce OCR with improved accuracy are welcome.
 
 ### AI Provider Performance
 
@@ -225,22 +248,19 @@ Benchmarked on a set of receipt photos (grocery, coffee shop, restaurant). Resul
 | **OpenAI Codex** (ChatGPT OAuth) | ~6 s | 5/5 items | Free (uses ChatGPT subscription) | **Recommended.** Best balance of speed and accuracy. |
 | **Meridian** (Claude OAuth) | ~16 s | 5/5 items | Free (uses Claude Max subscription) | Same accuracy, but 2–3x slower. |
 | **OpenAI** (API key) | ~4 s | 5/5 items | Pay-per-token | Fastest, but requires an API key and costs money. |
-| **OCR** (Tesseract.js) | ~1.4 s | 5/5 items | Free, fully local | No network calls. Good for simple receipts; struggles with handwritten or low-contrast text. |
 | **Ollama** (local LLM) | Varies | Varies | Free, fully local | Depends on model and hardware. Requires a running Ollama server. |
 
 **Recommendation:** Use `openai-codex` as your primary provider. It delivers the same accuracy as API-key providers at no additional cost (it piggybacks on your existing ChatGPT Plus/Pro subscription). Set your priority to:
 
 ```
-AI_PROVIDER_PRIORITY="openai-codex,ocr"
+AI_PROVIDER_PRIORITY="openai-codex"
 ```
 
-If you also have a Claude Max subscription, you can add `meridian` as a second fallback:
+If you also have a Claude Max subscription, you can add `meridian` as a fallback:
 
 ```
-AI_PROVIDER_PRIORITY="openai-codex,meridian,ocr"
+AI_PROVIDER_PRIORITY="openai-codex,meridian"
 ```
-
-OCR is always appended as the final fallback if omitted, so even if your OAuth session expires, receipt scanning will still work.
 
 ### OAuth (optional)
 
@@ -278,6 +298,7 @@ OCR is always appended as the final fallback if omitted, so even if your OAuth s
 | `MAX_UPLOAD_SIZE_MB` | `10` | Maximum upload file size. |
 | `AUTH_RATE_LIMIT_MAX` | `5` | Max login attempts per IP per hour. |
 | `REGISTER_RATE_LIMIT_MAX` | `10` | Max registration attempts per IP per hour. |
+| `GUEST_RATE_LIMIT_MAX` | `10` | Max guest split creations per IP per hour. |
 | `LOG_LEVEL` | `info` | Logging verbosity: `debug`, `info`, `warn`, or `error`. |
 
 ## Tech Stack
@@ -289,7 +310,7 @@ OCR is always appended as the final fallback if omitted, so even if your OAuth s
 | Database | [Prisma 7](https://www.prisma.io) + PostgreSQL 16 |
 | Auth | [NextAuth v5](https://authjs.dev) (credentials + OAuth + magic link) |
 | UI | [TailwindCSS 4](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com) + [next-themes](https://github.com/pacocoursey/next-themes) |
-| AI | Pluggable providers: OpenAI, OpenAI-Codex, Claude, Meridian, Ollama, OCR fallback |
+| AI | Pluggable providers: OpenAI, OpenAI-Codex, Claude, Meridian, Ollama |
 | Testing | [Vitest](https://vitest.dev) (unit) + [Playwright](https://playwright.dev) (e2e) |
 
 ## Development
@@ -369,7 +390,7 @@ BASE_URL=http://localhost:3000 npx playwright test --headed
 BASE_URL=http://localhost:3000 RUN_AI_TESTS=1 npx playwright test
 ```
 
-Set `AUTH_RATE_LIMIT_MAX=9999` in `.env` to avoid rate limiting during repeated test runs.
+Set `AUTH_RATE_LIMIT_MAX=9999` and `GUEST_RATE_LIMIT_MAX=9999` in `.env` to avoid rate limiting during repeated test runs.
 
 ## Contributing
 

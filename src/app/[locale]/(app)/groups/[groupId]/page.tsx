@@ -98,12 +98,12 @@ export default function GroupDetailPage({
     return (
       <div className="mx-auto max-w-md py-16 text-center">
         <Receipt className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-        <h2 className="mb-2 text-lg font-semibold">Group not found</h2>
+        <h2 className="mb-2 text-lg font-semibold">{t("detail.notFound")}</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          This group doesn&apos;t exist or you don&apos;t have access to it.
+          {t("detail.notFoundDescription")}
         </p>
         <Button nativeButton={false} render={<Link href="/groups" />}>
-          Back to Groups
+          {t("detail.backToGroups")}
         </Button>
       </div>
     );
@@ -129,7 +129,7 @@ export default function GroupDetailPage({
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowInvite(true)}>
             <UserPlus className="mr-2 h-4 w-4" />
-            Invite
+            {t("detail.invite")}
           </Button>
           <Button
             variant="outline"
@@ -172,12 +172,12 @@ export default function GroupDetailPage({
             </span>
             {m.role === "OWNER" && (
               <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                Owner
+                {t("detail.owner")}
               </span>
             )}
             {m.user.isPlaceholder && (
               <Badge variant="outline" className="ml-0.5 text-[10px]">
-                Pending
+                {t("detail.pending")}
               </Badge>
             )}
           </div>
@@ -187,7 +187,7 @@ export default function GroupDetailPage({
       {g.archivedAt && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200">
           <Archive className="h-4 w-4 shrink-0" />
-          <span>This group is archived. Expenses cannot be added.</span>
+          <span>{t("detail.archivedMessage")}</span>
           <Button
             variant="link"
             size="sm"
@@ -195,7 +195,7 @@ export default function GroupDetailPage({
             nativeButton={false}
             render={<Link href={`/groups/${groupId}/settings`} />}
           >
-            Manage
+            {t("detail.manage")}
           </Button>
         </div>
       )}
@@ -207,14 +207,14 @@ export default function GroupDetailPage({
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base" data-testid="balances-title">Balances</CardTitle>
+              <CardTitle className="text-base" data-testid="balances-title">{t("detail.balances")}</CardTitle>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setSettleState({ open: true })}
               >
                 <Handshake className="mr-2 h-4 w-4" />
-                Settle up
+                {t("detail.settle")}
               </Button>
             </div>
           </CardHeader>
@@ -222,7 +222,7 @@ export default function GroupDetailPage({
             {debts.data.debts.map((debt, i) => {
               const from = memberMap.get(debt.from);
               const to = memberMap.get(debt.to);
-              const toName = to?.name ?? to?.email ?? "Unknown";
+              const toName = to?.name ?? to?.email ?? t("detail.unknown");
               const isMyDebt = debt.from === authSession?.user?.id;
               const showVenmo = venmoSetting.data?.enabled && g.currency === "USD" && isMyDebt && to?.venmoUsername && isValidVenmoHandle(to.venmoUsername);
               const venmoUrl = showVenmo
@@ -243,7 +243,7 @@ export default function GroupDetailPage({
                     }
                   >
                     <span className="truncate text-xs font-medium text-red-600 sm:text-sm dark:text-red-400">
-                      {from?.name ?? from?.email ?? "Unknown"}
+                      {from?.name ?? from?.email ?? t("detail.unknown")}
                     </span>
                     <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="truncate text-xs font-medium text-emerald-600 sm:text-sm dark:text-emerald-400">
@@ -292,7 +292,7 @@ export default function GroupDetailPage({
       {debts.data && debts.data.debts.length === 0 && (
         <Card>
           <CardContent className="py-4 text-center text-sm text-muted-foreground">
-            All settled up!
+            {t("detail.allSettledUp")}
           </CardContent>
         </Card>
       )}
@@ -300,18 +300,18 @@ export default function GroupDetailPage({
       {/* Pending Receipts */}
       {pendingReceipts.data && pendingReceipts.data.length > 0 && (
         <div>
-          <h2 className="mb-3 text-lg font-semibold">Pending Receipts</h2>
+          <h2 className="mb-3 text-lg font-semibold">{t("detail.pendingReceipts")}</h2>
           <div className="space-y-2">
             {pendingReceipts.data.map((r) => (
               <Card key={r.id} className="transition-colors hover:bg-muted/50">
                 <CardContent className="flex items-center justify-between py-3">
                   <Link href={`/groups/${groupId}/scan?receiptId=${r.id}`} className="flex-1 min-w-0">
                     <p className="font-medium">
-                      {r.extractedData?.merchantName ?? "Receipt"}
+                      {r.extractedData?.merchantName ?? t("detail.receipt")}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {r.extractedData?.date ?? new Date(r.createdAt).toLocaleDateString()}
-                      {" · "}Saved for later
+                      {" · "}{t("detail.savedForLater")}
                     </p>
                   </Link>
                   <div className="flex items-center gap-3 ml-3">
@@ -324,7 +324,7 @@ export default function GroupDetailPage({
                       type="button"
                       className="text-muted-foreground hover:text-destructive transition-colors p-1"
                       onClick={() => {
-                        if (confirm("Delete this pending receipt?")) {
+                        if (confirm(t("detail.deleteReceiptConfirm"))) {
                           deletePending.mutate({ receiptId: r.id });
                         }
                       }}
@@ -352,11 +352,11 @@ export default function GroupDetailPage({
                 render={<Link href={`/groups/${groupId}/scan`} />}
               >
                 <Camera className="mr-2 h-4 w-4" />
-                Scan Receipt
+                {t("detail.scanReceipt")}
               </Button>
               <Button size="sm" nativeButton={false} render={<Link href={`/groups/${groupId}/expenses/new`} />}>
                 <Plus className="mr-2 h-4 w-4" />
-                Add Expense
+                {t("detail.addExpense")}
               </Button>
             </div>
           )}
@@ -376,7 +376,7 @@ export default function GroupDetailPage({
                 render={<Link href={`/groups/${groupId}/expenses/new`} />}
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Add your first expense
+                {t("detail.addFirstExpense")}
               </Button>
             </CardContent>
           </Card>

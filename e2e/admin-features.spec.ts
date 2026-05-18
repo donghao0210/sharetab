@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   users,
+  testUsers,
   login,
   authedContext,
   trpcQuery,
@@ -14,7 +15,7 @@ test.describe.configure({ mode: "serial" });
 test.describe("Admin audit log", () => {
   test("admin can view audit log section", async ({ page }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "Audit Log" })
@@ -35,64 +36,61 @@ test.describe("User suspend/unsuspend", () => {
   test("admin page shows suspend button for non-admin users", async ({
     page,
   }) => {
+    test.setTimeout(60000);
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
-    // Look in the User Management section specifically
+    // Wait for User Management section and search for the dedicated suspend test user
     const userSection = page.locator("section", {
       has: page.getByRole("heading", { name: "User Management" }),
     });
-    const bobRow = userSection.locator("tr", {
-      hasText: "bob@example.com",
-    });
-    await expect(bobRow).toBeVisible();
+    await expect(userSection).toBeVisible({ timeout: 30000 });
+    await userSection.getByPlaceholder("Search by name or email...").fill(testUsers.suspend.email);
+    const targetRow = userSection.locator("tr", {
+      hasText: testUsers.suspend.email,
+    }).first();
+    await expect(targetRow).toBeVisible({ timeout: 15000 });
     // Should have either suspend or unsuspend button
-    const hasSuspend = await bobRow.getByLabel(/^Suspend /).isVisible().catch(() => false);
-    const hasUnsuspend = await bobRow.getByLabel(/^Unsuspend /).isVisible().catch(() => false);
+    const hasSuspend = await targetRow.getByLabel(/^Suspend /).isVisible().catch(() => false);
+    const hasUnsuspend = await targetRow.getByLabel(/^Unsuspend /).isVisible().catch(() => false);
     expect(hasSuspend || hasUnsuspend).toBe(true);
   });
 
   test("suspend and unsuspend user via API", async () => {
     const ctx = await authedContext(users.alice.email, users.alice.password);
 
-    // Get Bob's user ID
+    // Use dedicated suspend test user
     const listData = await trpcResult(
-      await trpcQuery(ctx, "admin.listUsers", {})
+      await trpcQuery(ctx, "admin.listUsers", { search: testUsers.suspend.email })
     );
-    const bob = listData.users.find(
-      (u: { email: string }) => u.email === "bob@example.com"
+    const target = listData.users.find(
+      (u: { email: string }) => u.email === testUsers.suspend.email
     );
-    expect(bob).toBeDefined();
+    expect(target).toBeDefined();
 
-    // Ensure Bob is not suspended (unsuspend if needed)
-    if (bob.isSuspended) {
-      const unsRes = await trpcMutation(ctx, "admin.unsuspendUser", {
-        userId: bob.id,
-      });
+    // Ensure user is not suspended (unsuspend if needed)
+    if (target.isSuspended) {
+      const unsRes = await trpcMutation(ctx, "admin.unsuspendUser", { userId: target.id });
       const unsBody = await unsRes.json();
       expect(unsBody.result.data.json.unsuspended).toBe(true);
     }
 
-    // Suspend Bob
-    const suspendRes = await trpcMutation(ctx, "admin.suspendUser", {
-      userId: bob.id,
-    });
+    // Suspend
+    const suspendRes = await trpcMutation(ctx, "admin.suspendUser", { userId: target.id });
     const suspendBody = await suspendRes.json();
     expect(suspendBody.result.data.json.suspended).toBe(true);
 
-    // Verify Bob is now suspended
+    // Verify suspended
     const listData2 = await trpcResult(
-      await trpcQuery(ctx, "admin.listUsers", {})
+      await trpcQuery(ctx, "admin.listUsers", { search: testUsers.suspend.email })
     );
-    const bob2 = listData2.users.find(
-      (u: { email: string }) => u.email === "bob@example.com"
+    const target2 = listData2.users.find(
+      (u: { email: string }) => u.email === testUsers.suspend.email
     );
-    expect(bob2.isSuspended).toBe(true);
+    expect(target2.isSuspended).toBe(true);
 
-    // Unsuspend Bob
-    const unsuspendRes = await trpcMutation(ctx, "admin.unsuspendUser", {
-      userId: bob.id,
-    });
+    // Unsuspend (restore state for next run)
+    const unsuspendRes = await trpcMutation(ctx, "admin.unsuspendUser", { userId: target.id });
     const unsuspendBody = await unsuspendRes.json();
     expect(unsuspendBody.result.data.json.unsuspended).toBe(true);
 
@@ -103,7 +101,7 @@ test.describe("User suspend/unsuspend", () => {
 test.describe("Registration control", () => {
   test("admin page shows registration control section", async ({ page }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "Registration Control" })
@@ -173,7 +171,7 @@ test.describe("Registration control", () => {
 
     try {
       // Try to register without an invite code
-      await page.goto("/register");
+      await page.goto("/en/register");
 
       // Invite code field should be visible
       await expect(page.getByLabel("Invite Code")).toBeVisible();
@@ -217,7 +215,7 @@ test.describe("Registration control", () => {
     try {
       const testEmail = `invite-test-${Date.now()}@test.com`;
 
-      await page.goto("/register");
+      await page.goto("/en/register");
       await page.getByLabel("Name").fill("Invited User");
       await page.getByLabel("Email").fill(testEmail);
       await page.getByLabel("Password").fill("password123");
@@ -244,7 +242,7 @@ test.describe("Registration control", () => {
     });
 
     try {
-      await page.goto("/register");
+      await page.goto("/en/register");
 
       // Should show closed message
       await expect(
@@ -268,7 +266,7 @@ test.describe("Registration control", () => {
 test.describe("Announcement banner", () => {
   test("admin page shows announcement section", async ({ page }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "Announcement Banner" })
@@ -301,7 +299,7 @@ test.describe("Announcement banner", () => {
 test.describe("Global activity feed", () => {
   test("admin page shows activity feed section", async ({ page }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "Global Activity Feed" })
@@ -321,7 +319,7 @@ test.describe("Global activity feed", () => {
 test.describe("AI usage statistics", () => {
   test("admin page shows AI usage section", async ({ page }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "AI Usage" })
@@ -347,7 +345,7 @@ test.describe("Admin tools", () => {
     page,
   }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "Admin Tools" })
@@ -387,7 +385,7 @@ test.describe("Admin tools", () => {
 test.describe("Server logs", () => {
   test("admin page shows server logs section", async ({ page }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     await expect(
       page.getByRole("heading", { name: "Server Logs" })
@@ -429,18 +427,21 @@ test.describe("User impersonation", () => {
     page,
   }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
-    // Use User Management section to avoid strict mode violations with other tables
+    // Use User Management section — search for dedicated test user
     const userSection = page.locator("section", {
       has: page.getByRole("heading", { name: "User Management" }),
     });
-    const bobRow = userSection
+    await expect(userSection).toBeVisible({ timeout: 30000 });
+    await userSection.getByPlaceholder("Search by name or email...").fill(testUsers.suspend.email);
+    const targetRow = userSection
       .locator("table")
       .first()
-      .locator("tr", { hasText: "bob@example.com" });
-    await expect(bobRow).toBeVisible();
-    await expect(bobRow.getByLabel(/^Impersonate /)).toBeVisible();
+      .locator("tr", { hasText: testUsers.suspend.email })
+      .first();
+    await expect(targetRow).toBeVisible({ timeout: 15000 });
+    await expect(targetRow.getByLabel(/^Impersonate /)).toBeVisible();
   });
 
   test("impersonation API start and stop", async () => {
@@ -480,7 +481,7 @@ test.describe("User impersonation", () => {
     page,
   }) => {
     await login(page, users.alice.email, users.alice.password);
-    await page.goto("/admin");
+    await page.goto("/en/admin");
 
     // Click impersonate on Bob
     const userSection = page.locator("section", {

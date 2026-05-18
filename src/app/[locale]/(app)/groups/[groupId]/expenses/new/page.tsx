@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -34,13 +34,6 @@ type ShareEntry = {
   percentage?: number;
 };
 
-const SPLIT_MODES: { value: SplitMode; label: string; description: string }[] = [
-  { value: "EQUAL", label: "Equal", description: "Split evenly among selected members" },
-  { value: "EXACT", label: "Exact", description: "Enter each person's share" },
-  { value: "PERCENTAGE", label: "Percentage", description: "Split by percentage" },
-  { value: "SHARES", label: "Shares", description: "Split by share units" },
-];
-
 export default function NewExpensePage({
   params,
 }: {
@@ -52,6 +45,7 @@ export default function NewExpensePage({
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const receiptId = searchParams.get("receiptId") ?? undefined;
+  const t = useTranslations("expenses");
   const group = trpc.groups.get.useQuery({ groupId });
   const receiptQuery = trpc.receipts.getReceiptItems.useQuery(
     { receiptId: receiptId ?? "" },
@@ -69,6 +63,13 @@ export default function NewExpensePage({
   const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
   const [shares, setShares] = useState<ShareEntry[]>([]);
   const [prefilled, setPrefilled] = useState(false);
+
+  const splitModes = useMemo(() => [
+    { value: "EQUAL" as SplitMode, label: t("new.splitEqual"), description: t("new.splitEqualDescription") },
+    { value: "EXACT" as SplitMode, label: t("new.splitExact"), description: t("new.splitExactDescription") },
+    { value: "PERCENTAGE" as SplitMode, label: t("new.splitPercentage"), description: t("new.splitPercentageDescription") },
+    { value: "SHARES" as SplitMode, label: t("new.splitShares"), description: t("new.splitSharesDescription") },
+  ], [t]);
 
   const createExpense = trpc.expenses.create.useMutation({
     onSuccess: () => {
@@ -172,23 +173,23 @@ export default function NewExpensePage({
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" aria-label="Back to group" nativeButton={false} render={<Link href={`/groups/${groupId}`} />}>
+        <Button variant="ghost" size="icon" aria-label={t("new.backToGroup")} nativeButton={false} render={<Link href={`/groups/${groupId}`} />}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold">Add Expense</h1>
+        <h1 className="text-2xl font-bold">{t("new.title")}</h1>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Expense details</CardTitle>
+          <CardTitle>{t("new.expenseDetails")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Description</Label>
+              <Label htmlFor="title">{t("new.description")}</Label>
               <Input
                 id="title"
-                placeholder="e.g., Dinner, Groceries, Uber"
+                placeholder={t("new.descriptionPlaceholder")}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
@@ -202,7 +203,7 @@ export default function NewExpensePage({
                 type="number"
                 step="0.01"
                 min="0.01"
-                placeholder="0.00"
+                placeholder={t("new.amountPlaceholder")}
                 value={subtotalStr}
                 onChange={(e) => setSubtotalStr(e.target.value)}
                 required
@@ -335,17 +336,17 @@ export default function NewExpensePage({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="category">Category (optional)</Label>
+              <Label htmlFor="category">{t("new.category")}</Label>
               <Input
                 id="category"
-                placeholder="e.g., Food, Transport"
+                placeholder={t("new.categoryPlaceholder")}
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="paidBy">Paid by</Label>
+              <Label htmlFor="paidBy">{t("new.paidBy")}</Label>
               <select
                 id="paidBy"
                 value={paidById}
@@ -353,19 +354,19 @@ export default function NewExpensePage({
                 required
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                <option value="">Select member</option>
+                <option value="">{t("new.selectMember")}</option>
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name ?? "Unnamed"}
+                    {m.name ?? t("new.unnamed")}
                   </option>
                 ))}
               </select>
             </div>
 
             <div className="space-y-2">
-              <Label>Split mode</Label>
+              <Label>{t("new.splitType")}</Label>
               <div className="grid grid-cols-2 gap-2">
-                {SPLIT_MODES.map((mode) => (
+                {splitModes.map((mode) => (
                   <button
                     key={mode.value}
                     type="button"
@@ -386,7 +387,7 @@ export default function NewExpensePage({
             </div>
 
             <div className="space-y-2">
-              <Label>Split between</Label>
+              <Label>{t("new.splitBetween")}</Label>
               {splitMode === "EQUAL" && (
                 <EqualSplit
                   members={members}
@@ -436,7 +437,7 @@ export default function NewExpensePage({
               className="w-full"
               disabled={createExpense.isPending || amountCents <= 0 || shares.length === 0}
             >
-              {createExpense.isPending ? "Adding..." : "Add Expense"}
+              {createExpense.isPending ? t("new.submitting") : t("new.submit")}
             </Button>
           </form>
         </CardContent>

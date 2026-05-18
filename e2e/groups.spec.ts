@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
-import { users, login, uniqueEmail, register, navigateToGroup } from "./helpers";
+import { users, login, uniqueEmail, register, navigateToGroup, authedContext, deleteTestGroup } from "./helpers";
+
+const createdGroupIds: string[] = [];
+
+test.afterAll(async () => {
+  const ctx = await authedContext(users.alice.email, users.alice.password);
+  for (const id of createdGroupIds) await deleteTestGroup(ctx, id);
+  await ctx.dispose();
+});
 
 test.describe("Groups", () => {
   test.beforeEach(async ({ page }) => {
@@ -10,16 +18,18 @@ test.describe("Groups", () => {
 
   test.describe("Create Group", () => {
     test("2.1.1 — create group with defaults", async ({ page }) => {
-      await page.goto("/groups/new");
+      await page.goto("/en/groups/new");
       await page.getByLabel("Group name").fill("Test Group");
       await page.getByRole("button", { name: "Create Group" }).click();
       // Should redirect to new group detail page
       await page.waitForURL(/\/groups\/\w+/, { timeout: 10000 });
+      const gid = page.url().match(/groups\/(\w+)/)?.[1];
+      if (gid) createdGroupIds.push(gid);
       await expect(page.getByRole("heading", { name: "Test Group" })).toBeVisible();
     });
 
     test("2.1.2 — create group with all fields", async ({ page }) => {
-      await page.goto("/groups/new");
+      await page.goto("/en/groups/new");
       await page.getByLabel("Group name").fill("Vacation Fund");
       await page.getByLabel("Description").fill("For our summer trip");
       // Select airplane emoji
@@ -28,6 +38,8 @@ test.describe("Groups", () => {
       await page.getByLabel("Currency").selectOption("EUR");
       await page.getByRole("button", { name: "Create Group" }).click();
       await page.waitForURL(/\/groups\/\w+/, { timeout: 10000 });
+      const gid = page.url().match(/groups\/(\w+)/)?.[1];
+      if (gid) createdGroupIds.push(gid);
       await expect(page.getByRole("heading", { name: "Vacation Fund" })).toBeVisible();
       await expect(page.getByText("For our summer trip")).toBeVisible();
     });
@@ -77,10 +89,12 @@ test.describe("Groups", () => {
   test.describe("Group Settings", () => {
     test("2.3.1 — owner can update group name", async ({ page }) => {
       // Create a group first
-      await page.goto("/groups/new");
+      await page.goto("/en/groups/new");
       await page.getByLabel("Group name").fill("Rename Me");
       await page.getByRole("button", { name: "Create Group" }).click();
       await page.waitForURL(/\/groups\/\w+$/, { timeout: 10000 });
+      const gid = page.url().match(/groups\/(\w+)/)?.[1];
+      if (gid) createdGroupIds.push(gid);
 
       // Go to settings via the settings link on the group detail page
       await page.locator('a[href*="/groups/"][href$="/settings"]').click();
@@ -115,7 +129,7 @@ test.describe("Groups", () => {
 
   test.describe("Seed Data", () => {
     test("seed demo groups exist and are accessible", async ({ page }) => {
-      await page.goto("/groups");
+      await page.goto("/en/groups");
       await page.getByPlaceholder("Search groups...").fill("Apartment");
       await expect(page.getByText("Apartment").first()).toBeVisible();
       await page.getByPlaceholder("Search groups...").fill("Japan Trip");
