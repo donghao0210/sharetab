@@ -123,6 +123,17 @@ case ",${AI_PROVIDER_PRIORITY}," in
 esac
 
 case ",${AI_PROVIDER_PRIORITY}," in
+  *,gemini,*)
+  echo "  Gemini Model:   ${GEMINI_MODEL:-gemini-2.5-flash}"
+  if [ -n "$GEMINI_API_KEY" ]; then
+    echo "  Gemini Auth:    configured"
+  else
+    echo "  Gemini Auth:    missing"
+  fi
+  ;;
+esac
+
+case ",${AI_PROVIDER_PRIORITY}," in
   *,claude,*|*,meridian,*)
   echo "  AI Model:       ${ANTHROPIC_MODEL:-claude-sonnet-4-6}"
   case ",${AI_PROVIDER_PRIORITY}," in
