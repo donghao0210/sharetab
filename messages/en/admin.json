@@ -116,6 +116,18 @@
     "enabledStatus": "Venmo payment links are visible on split results",
     "disabledStatus": "Venmo payment links are hidden"
   },
+  "malaysianPayments": {
+    "title": "Malaysian Payment Methods",
+    "description": "When enabled, split results in MYR show the payer's TNG eWallet phone number and DuitNow QR for easy in-app payments.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "tngLabel": "Touch 'n Go eWallet",
+    "tngEnabledStatus": "TNG phone numbers are visible on MYR splits",
+    "tngDisabledStatus": "TNG phone numbers are hidden",
+    "duitNowLabel": "DuitNow QR",
+    "duitNowEnabledStatus": "DuitNow QR codes are visible on MYR splits",
+    "duitNowDisabledStatus": "DuitNow QR codes are hidden"
+  },
   "aiStats": {
     "title": "AI Usage",
     "totalProcessed": "Total Receipts Processed",

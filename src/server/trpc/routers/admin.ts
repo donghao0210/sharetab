@@ -921,6 +921,64 @@ export const adminRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  // ─── TNG eWallet Payments Toggle (Malaysia) ─────────────
+
+  getTngEnabled: publicProcedure.query(async ({ ctx }) => {
+    const setting = await ctx.db.systemSetting.findUnique({
+      where: { key: "tngEnabled" },
+    });
+    return { enabled: setting?.value === "true" };
+  }),
+
+  setTngEnabled: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.systemSetting.upsert({
+        where: { key: "tngEnabled" },
+        update: { value: String(input.enabled) },
+        create: { key: "tngEnabled", value: String(input.enabled) },
+      });
+
+      await logAdminAction(
+        ctx.db,
+        ctx.user.id,
+        "TNG_SETTING_CHANGED",
+        null,
+        { enabled: input.enabled }
+      );
+
+      return { success: true };
+    }),
+
+  // ─── DuitNow QR Toggle (Malaysia) ───────────────────────
+
+  getDuitNowEnabled: publicProcedure.query(async ({ ctx }) => {
+    const setting = await ctx.db.systemSetting.findUnique({
+      where: { key: "duitNowEnabled" },
+    });
+    return { enabled: setting?.value === "true" };
+  }),
+
+  setDuitNowEnabled: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.systemSetting.upsert({
+        where: { key: "duitNowEnabled" },
+        update: { value: String(input.enabled) },
+        create: { key: "duitNowEnabled", value: String(input.enabled) },
+      });
+
+      await logAdminAction(
+        ctx.db,
+        ctx.user.id,
+        "DUITNOW_SETTING_CHANGED",
+        null,
+        { enabled: input.enabled }
+      );
+
+      return { success: true };
+    }),
+
   // ─── Email Test ──────────────────────────────────────────
 
   sendTestEmail: adminProcedure.mutation(async ({ ctx }) => {

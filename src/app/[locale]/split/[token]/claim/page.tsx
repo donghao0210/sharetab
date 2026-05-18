@@ -12,11 +12,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Check, Loader2, Users, Receipt, ArrowRight, Image as ImageIcon, Pencil, X, Link2, Scissors } from "lucide-react";
+import { Check, Loader2, Users, Receipt, ArrowRight, Image as ImageIcon, Pencil, X, Link2, Scissors, Copy, QrCode } from "lucide-react";
 import { toast } from "sonner";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { buildVenmoPayUrl, isValidVenmoHandle } from "@/lib/venmo";
 import { getInitials, guestAvatarColor } from "@/lib/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 function getStoredClaimIdentity(token: string): StoredClaimIdentity | null {
   if (typeof window === "undefined") return null;
@@ -48,8 +56,12 @@ export default function ClaimPage({
 }) {
   const { token } = use(params);
   const locale = useLocale();
+  const router = useRouter();
   const t = useTranslations("split.claim");
   const tv = useTranslations("split.venmo");
+  const ttng = useTranslations("split.tng");
+  const tqr = useTranslations("split.duitNow");
+  const tp = useTranslations("split.payment");
 
   // --- State ---
   const [name, setName] = useState("");
@@ -73,6 +85,8 @@ export default function ClaimPage({
 
   // --- tRPC ---
   const venmoSetting = trpc.admin.getVenmoEnabled.useQuery();
+  const tngSetting = trpc.admin.getTngEnabled.useQuery();
+  const duitNowSetting = trpc.admin.getDuitNowEnabled.useQuery();
   const profile = trpc.auth.getProfile.useQuery(undefined, {
     enabled: !!authSession?.user && !!venmoSetting.data?.enabled,
   });
@@ -136,6 +150,16 @@ export default function ClaimPage({
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const finalizeAndCreateExpense = trpc.guest.finalizeAndCreateExpense.useMutation({
+    onSuccess: ({ expenseId, groupId }) => {
+      router.replace(`/groups/${groupId}/expenses/${expenseId}`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const [groupFinalizeOpen, setGroupFinalizeOpen] = useState(false);
+  const [unclaimedPolicy, setUnclaimedPolicy] = useState<"assignToPayer" | "splitEqually" | "skip">("assignToPayer");
 
   const claimItemUnits = trpc.guest.claimItemUnits.useMutation({
     onSuccess: (data, variables) => {
@@ -249,20 +273,42 @@ export default function ClaimPage({
     }
   }, [session.data, profile.data?.venmoUsername, profile.isFetched, session.isLoading, authSession?.user, authStatus]);
 
-  // Auto-rejoin from localStorage when session data loads
+  // Auto-rejoin when session data loads:
+  //  - Group sessions: any group member is auto-recognized via userId (backend matches by userId).
+  //  - Standalone sessions: prefer localStorage identity, fall back to logged-in creator name match.
   useEffect(() => {
     if (autoRejoinAttempted.current || personIndex !== null || !session.data) return;
     if (session.data.status !== "CLAIMING") return;
 
-    const stored = getStoredClaimIdentity(token);
-    if (!stored) return;
+    if (session.data.groupId) {
+      // Group-claim session: only members can join. Non-members will get a 403 from the
+      // mutation; the rendering branch below detects this and shows the rejection screen.
+      if (!authSession?.user?.id || !session.data.isGroupMember) return;
+      const myName = authSession.user.name?.trim() ?? "Member";
+      autoRejoinAttempted.current = true;
+      joinSession.mutate({ token, name: myName });
+      return;
+    }
 
-    autoRejoinAttempted.current = true;
-    joinSession.mutate({
-      token,
-      name: stored.name,
-    });
-  }, [session.data]); // eslint-disable-line react-hooks/exhaustive-deps
+    const stored = getStoredClaimIdentity(token);
+    if (stored) {
+      autoRejoinAttempted.current = true;
+      joinSession.mutate({ token, name: stored.name });
+      return;
+    }
+
+    const myName = authSession?.user?.name?.trim();
+    if (
+      session.data.isCreator &&
+      myName &&
+      session.data.people.some(
+        (p) => p.name.trim().toLowerCase() === myName.toLowerCase()
+      )
+    ) {
+      autoRejoinAttempted.current = true;
+      joinSession.mutate({ token, name: myName });
+    }
+  }, [session.data, authSession?.user?.name, authSession?.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const claimItems = trpc.guest.claimItems.useMutation({
     onSuccess: (result) => {
@@ -493,6 +539,15 @@ export default function ClaimPage({
 
   // --- Finalized state ---
   if (data.status === "FINALIZED") {
+    const paidByName = data.people[data.paidByIndex]?.name ?? "";
+    const showPayBlock =
+      currency === "MYR" &&
+      !data.isPayer &&
+      (
+        (!!tngSetting.data?.enabled && !!data.payerTngPhone) ||
+        (!!duitNowSetting.data?.enabled && !!data.payerDuitNowQrPath)
+      );
+
     return (
       <div className="space-y-6 pb-8">
         <div className="text-center space-y-2 pt-4">
@@ -501,6 +556,25 @@ export default function ClaimPage({
           </div>
           <h2 className="text-xl font-bold">{t("sessionFinalized")}</h2>
           <p className="text-muted-foreground">{t("sessionFinalizedDescription")}</p>
+          {paidByName && (
+            <p className="text-sm text-muted-foreground">
+              {tp.rich("paidBy", {
+                name: paidByName,
+                strong: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+              })}
+            </p>
+          )}
+          {data.groupId && data.convertedExpenseId && (
+            <Button
+              nativeButton={false}
+              render={<Link href={`/groups/${data.groupId}/expenses/${data.convertedExpenseId}`} />}
+              className="mt-3"
+              data-testid="view-converted-expense-btn"
+            >
+              <ArrowRight className="mr-2 h-4 w-4" />
+              {t("groupClaim.viewExpense", { defaultValue: "View expense" })}
+            </Button>
+          )}
         </div>
 
         {/* Total */}
@@ -514,6 +588,59 @@ export default function ClaimPage({
             </div>
           </CardContent>
         </Card>
+
+        {/* Pay {payer} — centralized payment block (MYR only, hidden for the payer) */}
+        {showPayBlock && (
+          <div className="space-y-3" data-testid="pay-payer-block">
+            <h3 className="font-semibold text-base">{tp("payHeader", { name: paidByName })}</h3>
+            <Card>
+              <CardContent className="py-4 space-y-2">
+                {tngSetting.data?.enabled && data.payerTngPhone && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(data.payerTngPhone!);
+                      toast.success(ttng("copied"));
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                    data-testid="tng-copy"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="font-semibold">{ttng("label")}</span>
+                      <span className="font-mono">{data.payerTngPhone}</span>
+                    </span>
+                    <Copy className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                )}
+                {duitNowSetting.data?.enabled && data.payerDuitNowQrPath && (
+                  <Dialog>
+                    <DialogTrigger
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+                      data-testid="duitnow-show"
+                    >
+                      <QrCode className="h-4 w-4" />
+                      {tqr("showQr")}
+                    </DialogTrigger>
+                    <DialogContent className="max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle>{tqr("dialogTitle")}</DialogTitle>
+                      </DialogHeader>
+                      <div className="flex flex-col items-center gap-3">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/api/uploads/${data.payerDuitNowQrPath}`}
+                          alt={tqr("label")}
+                          className="h-72 w-72 rounded-md border bg-white object-contain"
+                          data-testid="duitnow-qr-img"
+                        />
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Venmo handle */}
         {venmoSetting.data?.enabled && currency === "USD" && (data.isCreator ? (
@@ -554,12 +681,20 @@ export default function ClaimPage({
                         </AvatarFallback>
                       </Avatar>
                       <span className="font-medium">{person.name}</span>
+                      {person.personIndex === data.paidByIndex && (
+                        <span
+                          className="rounded-md border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400"
+                          data-testid={`paid-badge-${person.personIndex}`}
+                        >
+                          {tp("paidTag")}
+                        </span>
+                      )}
                     </div>
                     <span className="text-lg font-bold text-primary">
                       {formatCents(person.total, currency, locale)}
                     </span>
                   </div>
-                  {venmoSetting.data?.enabled && currency === "USD" && isValidVenmoHandle(venmoHandle) && myPersonIndex !== data.paidByIndex && person.personIndex !== data.paidByIndex && (
+                  {venmoSetting.data?.enabled && currency === "USD" && isValidVenmoHandle(venmoHandle) && !data.isPayer && person.personIndex !== data.paidByIndex && (
                     <a
                       href={buildVenmoPayUrl(venmoHandle, person.total, `ShareTab: ${data.receiptData.merchantName ?? 'Bill split'}`)!}
                       target="_blank"
@@ -595,6 +730,29 @@ export default function ClaimPage({
             <Link2 className="mr-2 h-4 w-4" />
             {t("copyLink")}
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Group session opened by a non-member (or anonymous): show a friendly rejection
+  // instead of the "Enter your name" form. The auto-rejoin effect won't have fired,
+  // so hasJoined stays false until we land here.
+  if (!hasJoined && data.groupId && data.status === "CLAIMING" && (!authSession?.user?.id || !data.isGroupMember)) {
+    const groupName = data.group?.name ?? "this group";
+    return (
+      <div className="space-y-6 pb-8">
+        <div className="text-center space-y-2 pt-12">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <Users className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h2 className="text-xl font-bold">{t("groupClaim.notInGroupTitle", { defaultValue: "You're not in this group" })}</h2>
+          <p className="text-muted-foreground max-w-sm mx-auto">
+            {t("groupClaim.notInGroupDescription", {
+              group: groupName,
+              defaultValue: `Ask the bill creator to add you to ${groupName}, then reopen this link.`,
+            })}
+          </p>
         </div>
       </div>
     );
@@ -1366,8 +1524,26 @@ export default function ClaimPage({
       {/* Save button - sticky bottom */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t">
         <div className="mx-auto max-w-lg">
-          {/* Finalize button -- only when no unsaved changes and all items claimed */}
-          {!hasAnyUnsavedChanges && personToken && myPersonIndex !== null && !finalizeSession.isPending && allItemsClaimed && (
+          {/* Group sessions: creator-only "Finalize & create expense" button (allowed even with unclaimed items — they choose a policy in the dialog) */}
+          {data.groupId && data.isCreator && !hasAnyUnsavedChanges && !finalizeAndCreateExpense.isPending && (
+            <Button
+              variant="default"
+              className="w-full h-12 mb-2"
+              onClick={() => setGroupFinalizeOpen(true)}
+              data-testid="group-finalize-btn"
+            >
+              {t("groupClaim.finalizeButton", { defaultValue: "Finalize & create expense" })}
+            </Button>
+          )}
+          {finalizeAndCreateExpense.isPending && (
+            <Button variant="outline" className="w-full h-12 mb-2" disabled>
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              {t("finalizing")}
+            </Button>
+          )}
+
+          {/* Standalone sessions: legacy finalize button (any joined participant, requires all items claimed) */}
+          {!data.groupId && !hasAnyUnsavedChanges && personToken && myPersonIndex !== null && !finalizeSession.isPending && allItemsClaimed && (
             <Button
               variant="outline"
               className="w-full h-12 mb-2"
@@ -1417,6 +1593,134 @@ export default function ClaimPage({
           </Button>
         </div>
       </div>
+
+      {/* Group: Finalize & create expense dialog */}
+      {data.groupId && data.isCreator && (
+        <Dialog open={groupFinalizeOpen} onOpenChange={setGroupFinalizeOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {t("groupClaim.finalizeTitle", {
+                  group: data.group?.name ?? "",
+                  defaultValue: `Finalize and create expense in ${data.group?.name ?? ""}`,
+                })}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {(() => {
+                const unclaimedItems = data.items
+                  .map((it, idx) => ({ idx, name: it.name, totalPrice: it.totalPrice }))
+                  .filter((it) => !claimedByAnyone.has(it.idx));
+                const payerName = data.people[data.paidByIndex]?.name ?? "the payer";
+                return unclaimedItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("groupClaim.allClaimedHint", {
+                      defaultValue: "Everything's been claimed — confirm to create the expense.",
+                    })}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold mb-1">
+                        {t("groupClaim.unclaimedHeader", { defaultValue: "Unclaimed items" })}
+                      </p>
+                      <ul className="text-sm text-muted-foreground list-disc list-inside space-y-0.5">
+                        {unclaimedItems.map((it) => (
+                          <li key={it.idx}>
+                            {it.name}{" "}
+                            <span className="text-muted-foreground/80">
+                              ({formatCents(it.totalPrice, currency, locale)})
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <fieldset className="space-y-2">
+                      <legend className="text-sm font-semibold mb-1">
+                        {t("groupClaim.unclaimedHowTo", { defaultValue: "What should happen to these?" })}
+                      </legend>
+                      <label className="flex items-start gap-2 cursor-pointer text-sm">
+                        <input
+                          type="radio"
+                          name="unclaimedPolicy"
+                          value="assignToPayer"
+                          checked={unclaimedPolicy === "assignToPayer"}
+                          onChange={() => setUnclaimedPolicy("assignToPayer")}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          {t("groupClaim.unclaimedAssignToPayer", {
+                            name: payerName,
+                            defaultValue: `Assign all to the payer (${payerName})`,
+                          })}
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer text-sm">
+                        <input
+                          type="radio"
+                          name="unclaimedPolicy"
+                          value="splitEqually"
+                          checked={unclaimedPolicy === "splitEqually"}
+                          onChange={() => setUnclaimedPolicy("splitEqually")}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          {t("groupClaim.unclaimedSplitEqually", {
+                            defaultValue: "Split equally among everyone",
+                          })}
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer text-sm">
+                        <input
+                          type="radio"
+                          name="unclaimedPolicy"
+                          value="skip"
+                          checked={unclaimedPolicy === "skip"}
+                          onChange={() => setUnclaimedPolicy("skip")}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          {t("groupClaim.unclaimedSkip", {
+                            defaultValue: "Skip — don't include in the expense",
+                          })}
+                        </span>
+                      </label>
+                    </fieldset>
+                  </div>
+                );
+              })()}
+            </div>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setGroupFinalizeOpen(false)}
+                disabled={finalizeAndCreateExpense.isPending}
+              >
+                {t("groupClaim.cancel", { defaultValue: "Cancel" })}
+              </Button>
+              <Button
+                onClick={() =>
+                  finalizeAndCreateExpense.mutate({
+                    token,
+                    unclaimedPolicy,
+                  })
+                }
+                disabled={finalizeAndCreateExpense.isPending}
+                data-testid="group-finalize-confirm-btn"
+              >
+                {finalizeAndCreateExpense.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("finalizing")}
+                  </>
+                ) : (
+                  t("groupClaim.confirm", { defaultValue: "Create expense" })
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -21,5 +21,18 @@
     "submit": "비밀번호 변경",
     "submitting": "변경 중...",
     "success": "비밀번호가 변경되었습니다!"
+  },
+  "paymentMethodsMy": {
+    "title": "Payment Methods (Malaysia)",
+    "tngPhone": "Touch 'n Go eWallet phone number",
+    "tngPhonePlaceholder": "012-3456789",
+    "tngPhoneHelp": "Guests will see this on the split page (MYR bills only).",
+    "duitNowQr": "DuitNow QR code",
+    "duitNowQrHelp": "Upload your DuitNow QR (any Malaysian bank). Guests can scan it to pay.",
+    "uploadQr": "Upload QR",
+    "replaceQr": "Replace",
+    "removeQr": "Remove",
+    "saved": "Saved!",
+    "uploadFailed": "Upload failed."
   }
 }

@@ -109,6 +109,7 @@ function ScanReceiptContent({
         })),
         creatorName: myName,
         paidByName: myName,
+        groupId,
       });
       router.push(`/split/${result.shareToken}/claim`);
     } catch (err) {
@@ -291,6 +292,9 @@ function ScanReceiptContent({
             <Users className="mr-2 h-4 w-4" />
             {shareForClaiming.isPending ? t("creatingSession") : t("shareForClaiming")}
           </Button>
+          <p className="text-xs text-muted-foreground text-center">
+            {t("shareForClaimingCaption")}
+          </p>
           <div className="space-y-2">
             {!showRescan ? (
               <Button

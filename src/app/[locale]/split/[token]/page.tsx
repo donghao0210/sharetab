@@ -10,11 +10,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Copy, Share2, Receipt, ArrowRight, Loader2 } from "lucide-react";
+import { Copy, Share2, Receipt, ArrowRight, Loader2, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@/i18n/navigation";
 import { getInitials, guestAvatarColor } from "@/lib/avatar";
 import { buildVenmoPayUrl, isValidVenmoHandle } from "@/lib/venmo";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function SharedSplitPage({
   params,
@@ -24,11 +31,16 @@ export default function SharedSplitPage({
   const { token } = use(params);
   const locale = useLocale();
   const tv = useTranslations("split.venmo");
+  const ttng = useTranslations("split.tng");
+  const tqr = useTranslations("split.duitNow");
+  const tp = useTranslations("split.payment");
   const [venmoHandle, setVenmoHandle] = useState("");
   const venmoInitRef = useRef(false);
   const { data: authSession, status: authStatus } = useSession();
   const split = trpc.guest.getSplit.useQuery({ token });
   const venmoSetting = trpc.admin.getVenmoEnabled.useQuery();
+  const tngSetting = trpc.admin.getTngEnabled.useQuery();
+  const duitNowSetting = trpc.admin.getDuitNowEnabled.useQuery();
   const profile = trpc.auth.getProfile.useQuery(undefined, {
     enabled: !!authSession?.user && !!venmoSetting.data?.enabled,
   });
@@ -107,6 +119,11 @@ export default function SharedSplitPage({
     toast.success("Link copied to clipboard");
   }
 
+  async function handleCopyTng(phone: string) {
+    await navigator.clipboard.writeText(phone);
+    toast.success(ttng("copied"));
+  }
+
   const initials = getInitials;
 
   return (
@@ -160,6 +177,59 @@ export default function SharedSplitPage({
         </CardContent>
       </Card>
 
+      {/* Pay {payer} — centralized payment block (MYR only, hidden for the payer) */}
+      {currency === "MYR" && !split.data?.isPayer && (
+        (tngSetting.data?.enabled && split.data?.payerTngPhone) ||
+        (duitNowSetting.data?.enabled && split.data?.payerDuitNowQrPath)
+      ) && (
+        <div className="space-y-3" data-testid="pay-payer-block">
+          <h3 className="font-semibold text-base">{tp("payHeader", { name: paidBy })}</h3>
+          <Card>
+            <CardContent className="py-4 space-y-2">
+              {tngSetting.data?.enabled && split.data?.payerTngPhone && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyTng(split.data!.payerTngPhone!)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                  data-testid="tng-copy"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold">{ttng("label")}</span>
+                    <span className="font-mono">{split.data.payerTngPhone}</span>
+                  </span>
+                  <Copy className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+              {duitNowSetting.data?.enabled && split.data?.payerDuitNowQrPath && (
+                <Dialog>
+                  <DialogTrigger
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+                    data-testid="duitnow-show"
+                  >
+                    <QrCode className="h-4 w-4" />
+                    {tqr("showQr")}
+                  </DialogTrigger>
+                  <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle>{tqr("dialogTitle")}</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/uploads/${split.data.payerDuitNowQrPath}`}
+                        alt={tqr("label")}
+                        className="h-72 w-72 rounded-md border bg-white object-contain"
+                        data-testid="duitnow-qr-img"
+                      />
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Per-person breakdown */}
       <div className="space-y-3">
         <h3 className="font-semibold text-base">Each person owes</h3>
@@ -181,6 +251,14 @@ export default function SharedSplitPage({
                       </AvatarFallback>
                     </Avatar>
                     <span className="font-semibold">{person.name}</span>
+                    {person.personIndex === data.paidByIndex && (
+                      <span
+                        className="rounded-md border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-400"
+                        data-testid={`paid-badge-${idx}`}
+                      >
+                        {tp("paidTag")}
+                      </span>
+                    )}
                   </div>
                   <span className="text-xl font-bold text-primary">
                     {formatCents(person.total, currency, locale)}

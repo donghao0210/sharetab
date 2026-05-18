@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { trpc } from "@/lib/trpc";
@@ -57,6 +58,18 @@ export default function GuestSplitPage() {
   const [people, setPeople] = useState<string[]>([""]); // start with one empty name
   const [assignments, setAssignments] = useState<Record<number, Set<number>>>({}); // itemIdx -> Set<personIdx>
   const [paidByIndex, setPaidByIndex] = useState(0);
+
+  // Pre-fill the logged-in user's name as the first person, so name-based
+  // matching (isPayer, getCreatorPayerPaymentMethods) succeeds by default.
+  const { data: authSession } = useSession();
+  const creatorNameInitRef = useRef(false);
+  useEffect(() => {
+    if (creatorNameInitRef.current) return;
+    const creatorName = authSession?.user?.name?.trim();
+    if (!creatorName) return;
+    setPeople((current) => (current.length === 1 && current[0] === "" ? [creatorName] : current));
+    creatorNameInitRef.current = true;
+  }, [authSession?.user?.name]);
   const [tipOverride, setTipOverride] = useState("");
   const [imagePath, setImagePath] = useState<string | null>(null);
   const [showImage, setShowImage] = useState(false);

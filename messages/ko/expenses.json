@@ -72,7 +72,8 @@
     "loadingGroup": "그룹 불러오는 중...",
     "groupLoadError": "그룹 데이터를 불러올 수 없습니다. 다시 시도해 주세요.",
     "uploadFailed": "업로드 실패",
-    "createSessionFailed": "세션 생성에 실패했습니다."
+    "createSessionFailed": "세션 생성에 실패했습니다.",
+    "shareForClaimingCaption": "Members open the link and claim items. Becomes a group expense when you finalize."
   },
   "receipt": {
     "hideImage": "영수증 이미지 숨기기",

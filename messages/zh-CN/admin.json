@@ -282,5 +282,17 @@
     "step1Label": "第 1 步：",
     "step2Label": "第 2 步：",
     "step2Hint": "OpenAI 流程会重定向到 localhost:1455。该回调在浏览器中预期会失败，因此请从地址栏复制完整的重定向 URL。"
+  },
+  "malaysianPayments": {
+    "title": "Malaysian Payment Methods",
+    "description": "When enabled, split results in MYR show the payer's TNG eWallet phone number and DuitNow QR for easy in-app payments.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "tngLabel": "Touch 'n Go eWallet",
+    "tngEnabledStatus": "TNG phone numbers are visible on MYR splits",
+    "tngDisabledStatus": "TNG phone numbers are hidden",
+    "duitNowLabel": "DuitNow QR",
+    "duitNowEnabledStatus": "DuitNow QR codes are visible on MYR splits",
+    "duitNowDisabledStatus": "DuitNow QR codes are hidden"
   }
 }

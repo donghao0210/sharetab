@@ -72,7 +72,8 @@
     "loadingGroup": "Laddar grupp...",
     "groupLoadError": "Kunde inte ladda gruppdata. Försök igen.",
     "uploadFailed": "Uppladdningen misslyckades",
-    "createSessionFailed": "Kunde inte skapa sessionen."
+    "createSessionFailed": "Kunde inte skapa sessionen.",
+    "shareForClaimingCaption": "Members open the link and claim items. Becomes a group expense when you finalize."
   },
   "receipt": {
     "hideImage": "Dölj kvittobild",
