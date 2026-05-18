@@ -816,6 +816,113 @@ export const guestRouter = createTRPCRouter({
       );
     }),
 
+  // Claim a partial quantity of a single multi-quantity row in one transaction:
+  // splits the row if needed, then assigns the split-off portion to the caller.
+  // Unblocks the "I had 1 of 2" workflow without making the user run split + claim separately.
+  claimItemUnits: publicProcedure
+    .input(z.object({
+      token: z.string(),
+      personIndex: z.number().int().min(0),
+      personToken: z.string().uuid(),
+      itemIndex: z.number().int().min(0),
+      unitsToClaim: z.number().int().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { allowed } = checkRateLimit(`guest-claim-units:${input.token}`, 20, 60 * 1000);
+      if (!allowed) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many requests. Please try again shortly." });
+      }
+      return withSerializableRetry(() =>
+        ctx.db.$transaction(async (tx) => {
+          const session = await tx.guestSplit.findUnique({
+            where: { shareToken: input.token },
+          });
+          if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+          if (session.expiresAt < new Date()) throw new TRPCError({ code: "NOT_FOUND", message: "Session expired" });
+          if (session.status !== GuestSplitStatus.CLAIMING) throw new TRPCError({ code: "BAD_REQUEST", message: "Session is no longer accepting claims" });
+
+          const people = session.people as GuestSessionPerson[];
+          const isParticipant = people.some(p => p.personToken === input.personToken);
+          if (!isParticipant) throw new TRPCError({ code: "FORBIDDEN", message: "Not a participant" });
+          if (input.personIndex >= people.length) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid person index" });
+          }
+
+          const items = [...(session.items as { name: string; originalName?: string | null; quantity: number; unitPrice: number; totalPrice: number }[])];
+          if (input.itemIndex >= items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid item index" });
+
+          const item = items[input.itemIndex]!;
+          if (input.unitsToClaim > item.quantity) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot claim more units than the item has" });
+          }
+
+          let assignments = cloneAssignments(
+            session.assignments as { itemIndex: number; personIndices: number[] }[]
+          );
+          let claimItemIndex = input.itemIndex;
+
+          if (input.unitsToClaim < item.quantity) {
+            // Split off `unitsToClaim` units into a new row and claim that new row.
+            const maxNewTotal = item.totalPrice - 1;
+            if (maxNewTotal <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Item price too low to split" });
+
+            const newTotalPrice = Math.min(item.unitPrice * input.unitsToClaim, maxNewTotal);
+            const remainingQty = item.quantity - input.unitsToClaim;
+            const remainingTotalPrice = item.totalPrice - newTotalPrice;
+
+            items[input.itemIndex] = { ...item, quantity: remainingQty, totalPrice: remainingTotalPrice };
+            items.splice(input.itemIndex + 1, 0, {
+              name: item.name,
+              originalName: item.originalName ?? null,
+              quantity: input.unitsToClaim,
+              unitPrice: item.unitPrice,
+              totalPrice: newTotalPrice,
+            });
+
+            // Shift existing assignments past the insertion point.
+            assignments = assignments.map(a => ({
+              itemIndex: a.itemIndex > input.itemIndex ? a.itemIndex + 1 : a.itemIndex,
+              personIndices: [...a.personIndices],
+            }));
+            claimItemIndex = input.itemIndex + 1;
+          }
+
+          // Merge the caller into the assignment for the (possibly newly created) target row.
+          let assignment = assignments.find(a => a.itemIndex === claimItemIndex);
+          if (!assignment) {
+            assignment = { itemIndex: claimItemIndex, personIndices: [] };
+            assignments.push(assignment);
+          }
+          if (!assignment.personIndices.includes(input.personIndex)) {
+            assignment.personIndices.push(input.personIndex);
+          }
+
+          const cleanedAssignments = assignments.filter(a => a.personIndices.length > 0);
+
+          await tx.guestSplit.update({
+            where: { id: session.id },
+            data: {
+              items: items as unknown as Prisma.InputJsonValue,
+              assignments: cleanedAssignments as unknown as Prisma.InputJsonValue,
+            },
+          });
+
+          // Surface co-claimants on the new row so the UI can warn about contested claims (matches claimItems).
+          const targetAssignment = cleanedAssignments.find(a => a.itemIndex === claimItemIndex);
+          const conflicts: { itemIndex: number; claimedBy: string[] }[] = [];
+          if (targetAssignment && targetAssignment.personIndices.length > 1) {
+            const otherNames = targetAssignment.personIndices
+              .filter(pi => pi !== input.personIndex)
+              .map(pi => people[pi]?.name ?? "Someone");
+            if (otherNames.length > 0) {
+              conflicts.push({ itemIndex: claimItemIndex, claimedBy: otherNames });
+            }
+          }
+          return { success: true, claimedItemIndex: claimItemIndex, conflicts };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      );
+    }),
+
   claimItems: publicProcedure
     .input(z.object({
       token: z.string(),
