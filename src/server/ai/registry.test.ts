@@ -77,7 +77,7 @@ describe("getAIProvider", () => {
   test("error message lists available providers", async () => {
     process.env.AI_PROVIDER_PRIORITY = "invalid";
     const { getAIProvider } = await import("./registry");
-    await expect(getAIProvider()).rejects.toThrow("openai, openai-codex, claude, meridian, ollama, mock");
+    await expect(getAIProvider()).rejects.toThrow("openai, openai-codex, claude, gemini, meridian, ollama, mock");
   });
 
   test("uses first provider from AI_PROVIDER_PRIORITY", async () => {

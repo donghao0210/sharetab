@@ -4,6 +4,7 @@ const USER_SELECTABLE_PROVIDERS = [
   "openai",
   "openai-codex",
   "claude",
+  "gemini",
   "meridian",
   "ollama",
 ] as const;
@@ -67,6 +68,13 @@ async function createProvider(name: AIProviderName): Promise<AIProvider> {
         throw new Error("Claude provider requires ANTHROPIC_API_KEY");
       }
       return new ClaudeProvider(process.env.ANTHROPIC_API_KEY);
+    }
+    case "gemini": {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("Gemini provider requires GEMINI_API_KEY");
+      }
+      const { GeminiProvider } = await import("./providers/gemini");
+      return new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL);
     }
     case "meridian": {
       const { MeridianProvider } = await import("./providers/meridian");
