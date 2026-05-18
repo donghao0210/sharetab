@@ -65,6 +65,8 @@ export default function ClaimPage({
   const [editingGroupSize, setEditingGroupSize] = useState(1);
   const [splittingItemIdx, setSplittingItemIdx] = useState<number | null>(null);
   const [splitQty, setSplitQty] = useState("");
+  const [partialClaimItemIdx, setPartialClaimItemIdx] = useState<number | null>(null);
+  const [partialClaimQty, setPartialClaimQty] = useState("1");
   const [venmoHandle, setVenmoHandle] = useState("");
   const venmoInitRef = useRef(false);
   const { data: authSession, status: authStatus } = useSession();
@@ -131,6 +133,42 @@ export default function ClaimPage({
     onSuccess: () => {
       session.refetch();
       toast.success(t("splitFinalized"));
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const claimItemUnits = trpc.guest.claimItemUnits.useMutation({
+    onSuccess: (data, variables) => {
+      setPartialClaimItemIdx(null);
+      setPartialClaimQty("1");
+      // If a split happened, the new row was inserted at variables.itemIndex + 1 and
+      // everything past that shifts +1. If no split happened, claimItemIndex === itemIndex
+      // and there's nothing to remap.
+      const splitHappened = data.claimedItemIndex !== variables.itemIndex;
+      const splitIdx = variables.itemIndex;
+      setClaimedItems((prev) => {
+        const next = new Map<number, Set<number>>();
+        for (const [personIdx, itemSet] of prev) {
+          const remapped = new Set<number>();
+          for (const itemIdx of itemSet) {
+            if (splitHappened && itemIdx > splitIdx) {
+              remapped.add(itemIdx + 1);
+            } else {
+              remapped.add(itemIdx);
+            }
+          }
+          next.set(personIdx, remapped);
+        }
+        // Add my claim on the (possibly newly created) target row.
+        const mySet = new Set(next.get(variables.personIndex) ?? []);
+        mySet.add(data.claimedItemIndex);
+        next.set(variables.personIndex, mySet);
+        return next;
+      });
+      if (data.conflicts.length > 0) {
+        const names = data.conflicts[0]!.claimedBy.join(", ");
+        toast.warning(`Also claimed by ${names}`);
+      }
     },
     onError: (err) => toast.error(err.message),
   });
@@ -1023,7 +1061,12 @@ export default function ClaimPage({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    toggleClaim(idx);
+                    if (item.quantity > 1 && !isClaimed) {
+                      setPartialClaimItemIdx(idx);
+                      setPartialClaimQty("1");
+                    } else {
+                      toggleClaim(idx);
+                    }
                   }
                 }}
                 className={`cursor-pointer transition-all ${
@@ -1031,7 +1074,17 @@ export default function ClaimPage({
                     ? "ring-2 ring-primary bg-primary/5"
                     : "hover:bg-muted/50"
                 }`}
-                onClick={() => toggleClaim(idx)}
+                onClick={() => {
+                  // For qty>1 rows that aren't already claimed by me, open the
+                  // partial-claim picker so the user can claim N of M units in one action.
+                  // Already-claimed rows still toggle off via tap so people can un-claim.
+                  if (item.quantity > 1 && !isClaimed) {
+                    setPartialClaimItemIdx(idx);
+                    setPartialClaimQty("1");
+                  } else {
+                    toggleClaim(idx);
+                  }
+                }}
               >
                 <CardContent className="py-3">
                   <div className="flex items-center gap-3">
@@ -1092,6 +1145,61 @@ export default function ClaimPage({
                           </span>
                         </div>
                       </div>
+
+                      {/* Partial-claim picker — for qty>1 rows, lets the user say "I had N of M" in one action */}
+                      {partialClaimItemIdx === idx && (() => {
+                        const parsed = Number(partialClaimQty);
+                        const validQty = Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= item.quantity;
+                        return (
+                          <div
+                            className="flex items-center gap-2 mt-2 flex-wrap"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-xs text-muted-foreground">How many did you have?</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={item.quantity}
+                              value={partialClaimQty}
+                              onChange={(e) => setPartialClaimQty(e.target.value)}
+                              className="w-16 h-7 text-xs"
+                              aria-label="Units to claim"
+                              data-testid={`partial-claim-qty-input-${idx}`}
+                            />
+                            <span className="text-xs text-muted-foreground">of {item.quantity}</span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 text-xs"
+                              disabled={claimItemUnits.isPending || !validQty || personIndex === null || !personToken}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!validQty || personIndex === null || !personToken) return;
+                                claimItemUnits.mutate({
+                                  token,
+                                  personIndex,
+                                  personToken,
+                                  itemIndex: idx,
+                                  unitsToClaim: parsed,
+                                });
+                              }}
+                              data-testid={`partial-claim-submit-${idx}`}
+                            >
+                              {validQty ? `Claim ${parsed} of ${item.quantity}` : `Claim`}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={(e) => { e.stopPropagation(); setPartialClaimItemIdx(null); setPartialClaimQty("1"); }}
+                            >
+                              {t("cancelButton")}
+                            </Button>
+                          </div>
+                        );
+                      })()}
 
                       {/* Split form */}
                       {splittingItemIdx === idx && (() => {
