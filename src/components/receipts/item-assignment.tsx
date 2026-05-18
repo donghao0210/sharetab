@@ -421,6 +421,18 @@ export function ItemAssignment({
             <span className="text-muted-foreground">{t("subtotal")}</span>
             <span>{formatCents(safeExtracted.subtotal, safeExtracted.currency, locale)}</span>
           </div>
+          {(safeExtracted.discount ?? 0) > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Discount</span>
+              <span>−{formatCents(safeExtracted.discount ?? 0, safeExtracted.currency, locale)}</span>
+            </div>
+          )}
+          {(safeExtracted.serviceCharge ?? 0) > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Service charge</span>
+              <span>{formatCents(safeExtracted.serviceCharge ?? 0, safeExtracted.currency, locale)}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("tax")}</span>
             <span>{formatCents(safeExtracted.tax, safeExtracted.currency, locale)}</span>
@@ -429,10 +441,28 @@ export function ItemAssignment({
             <span className="text-muted-foreground">{t("tip")}</span>
             <span>{formatCents(tip, safeExtracted.currency, locale)}</span>
           </div>
+          {(safeExtracted.rounding ?? 0) !== 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Rounding</span>
+              <span>
+                {(safeExtracted.rounding ?? 0) > 0 ? "+" : ""}
+                {formatCents(safeExtracted.rounding ?? 0, safeExtracted.currency, locale)}
+              </span>
+            </div>
+          )}
           <Separator />
           <div className="flex justify-between font-semibold">
             <span>{t("total")}</span>
-            <span>{formatCents(safeExtracted.subtotal + safeExtracted.tax + tip, safeExtracted.currency, locale)}</span>
+            <span>{formatCents(
+              safeExtracted.subtotal
+                - (safeExtracted.discount ?? 0)
+                + (safeExtracted.serviceCharge ?? 0)
+                + safeExtracted.tax
+                + tip
+                + (safeExtracted.rounding ?? 0),
+              safeExtracted.currency,
+              locale,
+            )}</span>
           </div>
         </CardContent>
       </Card>
