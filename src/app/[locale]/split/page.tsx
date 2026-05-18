@@ -24,6 +24,7 @@ type Step = "upload" | "processing" | "people" | "assign";
 
 type GuestItem = {
   name: string;
+  originalName?: string | null;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -64,7 +65,7 @@ export default function GuestSplitPage() {
 
   // Editing
   const [editingItem, setEditingItem] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState({ name: "", quantity: "1", totalPrice: "" });
+  const [editValues, setEditValues] = useState({ name: "", originalName: "", quantity: "1", totalPrice: "" });
   const [addingItem, setAddingItem] = useState(false);
   const [newItem, setNewItem] = useState({ name: "", quantity: "1", totalPrice: "" });
 
@@ -102,6 +103,7 @@ export default function GuestSplitPage() {
       const { receipt, items: dbItems } = receiptData.data;
       setItems(dbItems.map((i) => ({
         name: i.name,
+        originalName: i.originalName ?? null,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
         totalPrice: i.totalPrice,
@@ -226,6 +228,7 @@ export default function GuestSplitPage() {
     setEditingItem(idx);
     setEditValues({
       name: item.name,
+      originalName: item.originalName ?? "",
       quantity: String(item.quantity),
       totalPrice: centsToDecimal(item.totalPrice),
     });
@@ -239,9 +242,16 @@ export default function GuestSplitPage() {
     if (totalPrice <= 0) { toast.error(t("assign.validationPricePositive")); return; }
     const quantity = parseInt(editValues.quantity);
     if (!Number.isInteger(quantity) || quantity < 1) { toast.error(t("assign.validationQtyPositive")); return; }
+    const trimmedOriginal = editValues.originalName.trim();
     setItems((prev) => prev.map((item, i) =>
       i === editingItem
-        ? { name: trimmedName, quantity, unitPrice: Math.round(totalPrice / quantity), totalPrice }
+        ? {
+            name: trimmedName,
+            originalName: trimmedOriginal === "" ? null : trimmedOriginal,
+            quantity,
+            unitPrice: Math.round(totalPrice / quantity),
+            totalPrice,
+          }
         : item
     ));
     setEditingItem(null);
@@ -267,6 +277,7 @@ export default function GuestSplitPage() {
     if (!newItem.name || totalPrice <= 0) return;
     setItems((prev) => [...prev, {
       name: newItem.name,
+      originalName: null,
       quantity,
       unitPrice: Math.round(totalPrice / quantity),
       totalPrice,
@@ -294,6 +305,7 @@ export default function GuestSplitPage() {
     updated[index] = { ...item, quantity: remainingQty, totalPrice: remainingTotalPrice };
     updated.splice(index + 1, 0, {
       name: item.name,
+      originalName: item.originalName ?? null,
       quantity: qty,
       unitPrice: item.unitPrice,
       totalPrice: newTotalPrice,
@@ -797,6 +809,12 @@ export default function GuestSplitPage() {
                           placeholder={t("assign.itemNamePlaceholder")}
                           className="h-12"
                         />
+                        <Input
+                          value={editValues.originalName}
+                          onChange={(e) => setEditValues((p) => ({ ...p, originalName: e.target.value }))}
+                          placeholder="Original printed name (optional)"
+                          className="h-10 text-xs"
+                        />
                         <div className="flex gap-2">
                           <Input
                             type="number"
@@ -821,39 +839,46 @@ export default function GuestSplitPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{item.name}</span>
-                          {item.quantity > 1 && (
-                            <span className="text-xs text-muted-foreground">x{item.quantity}</span>
-                          )}
-                          <button type="button" onClick={() => startEditing(itemIdx)} className="text-muted-foreground hover:text-foreground p-1">
-                            <Pencil className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteItem(itemIdx)}
-                            className="text-muted-foreground hover:text-destructive p-1"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                          {item.quantity > 1 && (
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">{item.name}</span>
+                            {item.quantity > 1 && (
+                              <span className="text-xs text-muted-foreground">x{item.quantity}</span>
+                            )}
+                            <button type="button" onClick={() => startEditing(itemIdx)} className="text-muted-foreground hover:text-foreground p-1">
+                              <Pencil className="h-3 w-3" />
+                            </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                setSplittingIndex(itemIdx);
-                                setSplitQuantity("1");
-                              }}
-                              className="text-muted-foreground hover:text-foreground p-1"
-                              title={t("assign.split")}
-                              aria-label={t("assign.split") + ` ${item.name}`}
-                              data-testid={`guest-split-btn-${itemIdx}`}
+                              onClick={() => deleteItem(itemIdx)}
+                              className="text-muted-foreground hover:text-destructive p-1"
                             >
-                              <Scissors className="h-3 w-3" />
+                              <Trash2 className="h-3 w-3" />
                             </button>
+                            {item.quantity > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSplittingIndex(itemIdx);
+                                  setSplitQuantity("1");
+                                }}
+                                className="text-muted-foreground hover:text-foreground p-1"
+                                title={t("assign.split")}
+                                aria-label={t("assign.split") + ` ${item.name}`}
+                                data-testid={`guest-split-btn-${itemIdx}`}
+                              >
+                                <Scissors className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                          {item.originalName && item.originalName !== item.name && (
+                            <span className="text-xs text-muted-foreground truncate" title={item.originalName}>
+                              {item.originalName}
+                            </span>
                           )}
                         </div>
-                        <span className="font-semibold">{formatCents(item.totalPrice, currency, locale)}</span>
+                        <span className="font-semibold shrink-0">{formatCents(item.totalPrice, currency, locale)}</span>
                       </div>
                     )}
                     {/* Inline split form */}

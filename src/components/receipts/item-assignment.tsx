@@ -48,7 +48,7 @@ export function ItemAssignment({
   const lastTouchDist = useRef<number | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<{ name: string; quantity: string; totalPrice: string }>({ name: "", quantity: "", totalPrice: "" });
+  const [editValues, setEditValues] = useState<{ name: string; originalName: string; quantity: string; totalPrice: string }>({ name: "", originalName: "", quantity: "", totalPrice: "" });
   const [addingItem, setAddingItem] = useState(false);
   const [newItem, setNewItem] = useState({ name: "", quantity: "1", totalPrice: "" });
   const [splittingItem, setSplittingItem] = useState<string | null>(null);
@@ -167,10 +167,11 @@ export function ItemAssignment({
     setAssignments(next);
   }
 
-  function startEditing(item: { id: string; name: string; quantity: number; totalPrice: number }) {
+  function startEditing(item: { id: string; name: string; originalName?: string | null; quantity: number; totalPrice: number }) {
     setEditingItem(item.id);
     setEditValues({
       name: item.name,
+      originalName: item.originalName ?? "",
       quantity: String(item.quantity),
       totalPrice: centsToDecimal(item.totalPrice),
     });
@@ -183,9 +184,11 @@ export function ItemAssignment({
     if (totalPrice <= 0) { toast.error(t("validationPricePositive")); return; }
     const quantity = parseInt(editValues.quantity);
     if (!Number.isInteger(quantity) || quantity < 1) { toast.error(t("validationQtyPositive")); return; }
+    const trimmedOriginal = editValues.originalName.trim();
     updateItem.mutate({
       itemId,
       name: trimmedName,
+      originalName: trimmedOriginal === "" ? null : trimmedOriginal,
       quantity,
       totalPrice,
       unitPrice: Math.round(totalPrice / quantity),
@@ -576,6 +579,12 @@ export function ItemAssignment({
                         placeholder={t("pricePlaceholder")}
                       />
                     </div>
+                    <Input
+                      value={editValues.originalName}
+                      onChange={(e) => setEditValues((p) => ({ ...p, originalName: e.target.value }))}
+                      placeholder="Original printed name (optional)"
+                      className="text-xs"
+                    />
                     <div className="flex gap-1">
                       <Button type="button" size="sm" onClick={() => saveEdit(item.id)} disabled={updateItem.isPending}>
                         {t("save")}
@@ -586,49 +595,56 @@ export function ItemAssignment({
                     </div>
                   </div>
                 ) : (
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{item.name}</span>
-                      {item.quantity > 1 && (
-                        <span className="text-xs text-muted-foreground">
-                          x{item.quantity}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => startEditing(item)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(t("removeConfirm", { name: item.name }))) {
-                            deleteItem.mutate({ itemId: item.id });
-                          }
-                        }}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                      {item.quantity > 1 && (
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <span className="font-medium">{item.name}</span>
+                        {item.quantity > 1 && (
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            x{item.quantity}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => startEditing(item)}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
-                            setSplittingItem(item.id);
-                            setSplitQuantity("1");
+                            if (confirm(t("removeConfirm", { name: item.name }))) {
+                              deleteItem.mutate({ itemId: item.id });
+                            }
                           }}
-                          className="text-muted-foreground hover:text-foreground"
-                          title={t("split")}
-                          aria-label={t("splitAriaLabel", { name: item.name })}
-                          data-testid={`split-btn-${item.id}`}
+                          className="text-muted-foreground hover:text-destructive"
                         >
-                          <Scissors className="h-3 w-3" />
+                          <Trash2 className="h-3 w-3" />
                         </button>
+                        {item.quantity > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSplittingItem(item.id);
+                              setSplitQuantity("1");
+                            }}
+                            className="text-muted-foreground hover:text-foreground"
+                            title={t("split")}
+                            aria-label={t("splitAriaLabel", { name: item.name })}
+                            data-testid={`split-btn-${item.id}`}
+                          >
+                            <Scissors className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      {item.originalName && item.originalName !== item.name && (
+                        <span className="text-xs text-muted-foreground truncate" title={item.originalName}>
+                          {item.originalName}
+                        </span>
                       )}
                     </div>
-                    <span className="font-semibold">
+                    <span className="font-semibold shrink-0">
                       {formatCents(item.totalPrice, safeExtracted.currency, locale)}
                     </span>
                   </div>

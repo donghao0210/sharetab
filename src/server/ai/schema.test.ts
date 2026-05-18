@@ -124,4 +124,109 @@ describe("receiptExtractionSchema", () => {
 
     expect(() => receiptExtractionSchema.parse(legacy)).not.toThrow();
   });
+
+  // ─── rounding (MY 5-sen rounding) ─────────────────────
+
+  it("parses an MY receipt with a negative rounding adjustment", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [{ name: "Roti Canai", quantity: 1, unitPrice: 320, totalPrice: 320 }],
+      subtotal: 320,
+      tax: 19, // 6% of 320 = 19.2 → printed as 19
+      taxPct: 6,
+      rounding: -4, // 339 -> 335 (rounds down 4 sen to nearest 5)
+      total: 335,
+      currency: "MYR",
+    });
+
+    expect(parsed.rounding).toBe(-4);
+    expect(parsed.total).toBe(335);
+  });
+
+  it("accepts positive rounding (rare — round-up adjustment)", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [BASE_ITEM],
+      subtotal: 100,
+      total: 110,
+      tax: 9,
+      rounding: 1,
+    });
+
+    expect(parsed.rounding).toBe(1);
+  });
+
+  it("defaults rounding to 0 when not provided", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [BASE_ITEM],
+      subtotal: 100,
+      total: 100,
+    });
+
+    expect(parsed.rounding).toBe(0);
+  });
+
+  // ─── originalName (multilingual / code-prefix) ─────────
+
+  it("parses an item with a Chinese originalName", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [
+        { name: "Mapo Tofu", originalName: "麻婆豆腐", quantity: 1, unitPrice: 1880, totalPrice: 1880 },
+      ],
+      subtotal: 1880,
+      total: 1880,
+    });
+
+    expect(parsed.items[0].originalName).toBe("麻婆豆腐");
+    expect(parsed.items[0].name).toBe("Mapo Tofu");
+  });
+
+  it("parses an item with a code-prefix originalName", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [
+        { name: "Dumpling+Mixed Vegetable", originalName: "PK001 Dumpling+Mixed Vegetable", quantity: 2, unitPrice: 1390, totalPrice: 2780 },
+      ],
+      subtotal: 2780,
+      total: 2780,
+    });
+
+    expect(parsed.items[0].originalName).toBe("PK001 Dumpling+Mixed Vegetable");
+    expect(parsed.items[0].quantity).toBe(2);
+    expect(parsed.items[0].unitPrice).toBe(1390);
+    expect(parsed.items[0].totalPrice).toBe(2780);
+  });
+
+  it("accepts originalName as null (clean English item)", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [{ name: "Grilled Salmon", originalName: null, quantity: 1, unitPrice: 1895, totalPrice: 1895 }],
+      subtotal: 1895,
+      total: 1895,
+    });
+
+    expect(parsed.items[0].originalName).toBeNull();
+  });
+
+  it("accepts items without an originalName field (backward compat)", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [BASE_ITEM],
+      subtotal: 100,
+      total: 100,
+    });
+
+    expect(parsed.items[0].originalName).toBeUndefined();
+  });
+
+  // ─── multi-quantity invariant ─────────────────────────
+
+  it("parses a multi-qty line like '2 PK001 Dumpling+Mixed Vegetable 27.80' with qty*unitPrice=totalPrice", () => {
+    const parsed = receiptExtractionSchema.parse({
+      items: [
+        { name: "Dumpling+Mixed Vegetable", quantity: 2, unitPrice: 1390, totalPrice: 2780 },
+      ],
+      subtotal: 2780,
+      total: 2780,
+    });
+
+    const item = parsed.items[0];
+    expect(item.quantity).toBe(2);
+    expect(item.unitPrice * item.quantity).toBe(item.totalPrice);
+  });
 });

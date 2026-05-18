@@ -230,13 +230,14 @@ model Receipt {
 }
 
 model ReceiptItem {
-  id         String @id @default(cuid())
-  receiptId  String
-  name       String
-  quantity   Int    @default(1)
-  unitPrice  Int    // cents
-  totalPrice Int    // cents
-  sortOrder  Int    @default(0)
+  id           String  @id @default(cuid())
+  receiptId    String
+  name         String
+  originalName String? // verbatim printed text when different from name (e.g. non-English script, item codes)
+  quantity     Int     @default(1)
+  unitPrice    Int     // cents
+  totalPrice   Int     // cents
+  sortOrder    Int     @default(0)
 
   assignments ReceiptItemAssignment[]
   receipt     Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
